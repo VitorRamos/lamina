@@ -1,0 +1,5 @@
+// Stage-level platform pin + build-time --platform.
+pub target app = Stage.from("alpine:3.19")
+  .platform("linux/amd64")
+  .run("uname -m")
+  .name("app");

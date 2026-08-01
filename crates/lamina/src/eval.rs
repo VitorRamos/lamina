@@ -462,6 +462,7 @@ impl<'a> Evaluator<'a> {
                 value: req_str(&vals, 1, expr, self.file)?,
             },
             "healthcheck" => Instr::Healthcheck(req_str(&vals, 0, expr, self.file)?),
+            "platform" => Instr::Platform(req_str(&vals, 0, expr, self.file)?),
             "run_with" => Instr::RunWith {
                 cmd: req_str(&vals, 0, expr, self.file)?,
                 mounts: vals.get(1).and_then(|v| v.as_list_mount()).ok_or_else(|| {

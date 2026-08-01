@@ -75,6 +75,8 @@ pub enum Instr {
         cmd: String,
         mounts: Vec<MountSpec>,
     },
+    /// Platform constraint for this stage (e.g. `linux/amd64`).
+    Platform(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,6 +173,7 @@ fn instr_summary(i: &Instr) -> String {
         Instr::Label { key, value } => format!("label {key}={value}"),
         Instr::Healthcheck(c) => format!("healthcheck {c}"),
         Instr::RunWith { cmd, mounts } => format!("run_with mounts={} cmd={cmd}", mounts.len()),
+        Instr::Platform(p) => format!("platform {p}"),
     }
 }
 

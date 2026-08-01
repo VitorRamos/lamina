@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-08-01
+
+### Added
+
+- IR lint pack: `empty-stage`, `unused-stage`, `root-final`, `secret-env`, `unpinned-base`
+- CLI `--deny <lint|all|warnings>` on `check` / `build`; `lamina check --list-lints`
+- `[lint] deny = [...]` in `Lamina.toml`
+- Multi-platform: `.platform("linux/amd64")`, `lamina build --platform …`, `[build] platforms`
+- `--push` for multi-arch (required when multiple platforms)
+- Example `platform-demo`
+
 ## 0.2.0 — 2026-08-01
 
 ### Added

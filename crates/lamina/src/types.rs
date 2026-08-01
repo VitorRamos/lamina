@@ -399,7 +399,7 @@ fn check_method(
         return None;
     }
     let ok = match method {
-        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" => args.len() == 1,
+        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" | "platform" => args.len() == 1,
         "copy" | "label" => args.len() == 2,
         "copy_many" => args.len() == 2,
         "copy_from" => args.len() == 3,
@@ -423,7 +423,7 @@ fn check_method(
         return None;
     }
     match method {
-        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" => {
+        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" | "platform" => {
             expect_ty(&args[0], Type::String, tenv, fns, diags);
         }
         "copy" | "label" => {

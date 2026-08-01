@@ -15,6 +15,8 @@
 | Cache/secret/ssh/bind mounts | `Mount.*` + `.run_with` → Dockerfile `--mount` bridge | supported (0.2) |
 | LABEL / HEALTHCHECK | `.label` / `.healthcheck` | supported (0.2) |
 | Path modules + stdlib | `use` + `stdlib/` | supported (0.2) |
+| Multi-platform | `.platform` + `buildx --platform` / `--push` | supported (0.3) |
+| IR lints + `--deny` | empty/unused/root-final/secret-env/unpinned | supported (0.3) |
 | Frontend gateway for `.lam` | | post-1.0 |
 
 ## 0.1 solve bridge note
