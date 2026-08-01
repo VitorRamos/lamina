@@ -1,0 +1,17 @@
+[package]
+name = "lamina-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Lamina CLI (binary name: lamina)"
+readme = "../../README.md"
+
+[[bin]]
+name = "lamina"
+path = "src/main.rs"
+
+[dependencies]
+lamina = { workspace = true }
+clap = { workspace = true }
