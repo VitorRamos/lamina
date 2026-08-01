@@ -228,11 +228,8 @@ fn resolve_use_path(
 ) -> std::result::Result<(PathBuf, ModuleKind, Option<String>, Option<String>), String> {
     if spec.starts_with("git+") {
         let git = parse_git_use(spec)?;
-        let (path, commit) = git_remote::resolve_git_module(
-            &git,
-            ctx.offline,
-            ctx.module_cache.as_deref(),
-        )?;
+        let (path, commit) =
+            git_remote::resolve_git_module(&git, ctx.offline, ctx.module_cache.as_deref())?;
         return Ok((path, ModuleKind::Git, commit, None));
     }
 
@@ -275,11 +272,8 @@ fn resolve_use_path(
                 .map(|sc| c.starts_with(sc))
                 .unwrap_or(false)
         });
-        let cache_root =
-            git_remote::module_cache_root_override(ctx.module_cache.as_deref());
-        let cache_root = cache_root
-            .canonicalize()
-            .unwrap_or(cache_root);
+        let cache_root = git_remote::module_cache_root_override(ctx.module_cache.as_deref());
+        let cache_root = cache_root.canonicalize().unwrap_or(cache_root);
         let in_cache = c.starts_with(&cache_root);
 
         // Relative imports from a git-fetched module live under the module cache,
@@ -295,9 +289,7 @@ fn resolve_use_path(
             if let Some((repo_dir, meta)) = git_remote::find_remote_checkout(&c) {
                 // Stay inside the same clone (block `../../` out of the repo).
                 if !c.starts_with(&repo_dir) {
-                    return Err(format!(
-                        "use path escapes remote module repository: {spec}"
-                    ));
+                    return Err(format!("use path escapes remote module repository: {spec}"));
                 }
                 let lock_spec = git_remote::git_spec_for_path(&repo_dir, &meta, &c);
                 let commit = std::process::Command::new("git")
@@ -451,10 +443,7 @@ pub fn entry(s: Stage) -> Stage {
         let cache = dir.path().join("cache");
         let proj = dir.path().join("proj");
         std::fs::create_dir_all(proj.join("src")).unwrap();
-        let repo_url = format!(
-            "git+file://{}?ref=main&path=pkg/mod.lam",
-            repo.display()
-        );
+        let repo_url = format!("git+file://{}?ref=main&path=pkg/mod.lam", repo.display());
         std::fs::write(
             proj.join("src/image.lam"),
             format!(

@@ -85,8 +85,8 @@ Overview: [`post-1.0.md`](post-1.0.md).
 | Issue | Theme | Ready? | Notes |
 |-------|--------|--------|--------|
 | [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **shipped (1.1)** | See `docs/remote-modules.md` |
-| [#28](https://github.com/VitorRamos/lamina/issues/28) | LSP MVP (diagnostics, hover, goto) | **agent-ready** | No BuildKit; highest DX leverage |
-| [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | Parallel with LSP; true `buildx -f` |
+| [#28](https://github.com/VitorRamos/lamina/issues/28) | LSP MVP (diagnostics, hover, goto) | **shipped (1.2)** | `lamina lsp` / `docs/lsp.md` |
+| [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | true `buildx -f` |
 
 **Suggested order:** #28 ∥ #25 (remotes done in 1.1).
 

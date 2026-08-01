@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 — 2026-08-01
+
+### Added
+
+- **Language server:** `lamina-lsp` / `lamina lsp` (stdio)
+  - Diagnostics (parse + typecheck)
+  - Hover, goto definition, Stage method completion, format
+- Docs: `docs/lsp.md`
+
 ## 1.1.0 — 2026-08-01
 
 ### Added

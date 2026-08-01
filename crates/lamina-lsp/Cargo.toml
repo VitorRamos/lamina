@@ -1,0 +1,24 @@
+[package]
+name = "lamina-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Language Server Protocol implementation for Lamina"
+readme = "../../README.md"
+
+[[bin]]
+name = "lamina-lsp"
+path = "src/main.rs"
+
+[dependencies]
+lamina = { workspace = true }
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
