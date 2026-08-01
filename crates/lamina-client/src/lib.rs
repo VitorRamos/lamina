@@ -6,7 +6,7 @@
 use lamina::ir::ModuleIr;
 use lamina_llb::{lower, render_internal_dockerfile, summary};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -96,13 +96,16 @@ pub fn solve(ir: &ModuleIr, req: &SolveRequest) -> Result<SolveResult, SolveErro
     cmd.arg("--progress").arg(&req.progress);
     cmd.arg(req.context.as_os_str());
 
-    let output = cmd.output()?;
-    if !output.status.success() {
+    // Stream Buildx/BuildKit progress live (do not buffer with `.output()`).
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+
+    let status = cmd.status()?;
+    if !status.success() {
         return Err(SolveError::Docker(format!(
-            "status {:?}\nstdout:\n{}\nstderr:\n{}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+            "docker buildx build exited with status {:?}",
+            status.code()
         )));
     }
     Ok(plan)
