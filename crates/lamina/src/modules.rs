@@ -16,6 +16,8 @@ pub struct ModuleLoadContext {
     pub stdlib_paths: Vec<PathBuf>,
     /// Disallow network / git fetch (env `LAMINA_OFFLINE` also applies).
     pub offline: bool,
+    /// Override module cache root (tests); else `LAMINA_MODULE_CACHE` / default.
+    pub module_cache: Option<PathBuf>,
 }
 
 impl ModuleLoadContext {
@@ -38,6 +40,7 @@ impl ModuleLoadContext {
             project_root,
             stdlib_paths,
             offline: false,
+            module_cache: None,
         }
     }
 }
@@ -107,11 +110,14 @@ fn expand_uses(
     for item in module.items {
         match item {
             Item::Use(u) => {
-                let (path, kind, commit) =
+                let (path, kind, commit, lock_spec) =
                     resolve_use_path(&u.path, from_dir, state.ctx).map_err(|msg| {
                         CompileError::single(Some(file), DiagnosticMsg::error(msg, Some(u.span)))
                     })?;
-                record_resolved(&u.path, &path, kind, commit, state.resolved_map)?;
+                // Prefer a stable lock key (rewrites `./foo.lam` inside a git checkout
+                // to `git+…?path=…` so nested deps don't collide across remotes).
+                let record_spec = lock_spec.as_deref().unwrap_or(u.path.as_str());
+                record_resolved(record_spec, &path, kind, commit, state.resolved_map)?;
                 let exports = load_exports(&path, state)?;
                 for f in exports {
                     if !seen.insert(f.name.clone()) {
@@ -214,16 +220,20 @@ fn load_exports(path: &Path, state: &mut ExpandState<'_>) -> Result<Vec<FnDecl>>
     Ok(exports)
 }
 
-/// Returns (filesystem path, kind, optional git commit).
+/// Returns (filesystem path, kind, optional git commit, optional stable lock key).
 fn resolve_use_path(
     spec: &str,
     from_dir: &Path,
     ctx: &ModuleLoadContext,
-) -> std::result::Result<(PathBuf, ModuleKind, Option<String>), String> {
+) -> std::result::Result<(PathBuf, ModuleKind, Option<String>, Option<String>), String> {
     if spec.starts_with("git+") {
         let git = parse_git_use(spec)?;
-        let (path, commit) = git_remote::resolve_git_module(&git, ctx.offline)?;
-        return Ok((path, ModuleKind::Git, commit));
+        let (path, commit) = git_remote::resolve_git_module(
+            &git,
+            ctx.offline,
+            ctx.module_cache.as_deref(),
+        )?;
+        return Ok((path, ModuleKind::Git, commit, None));
     }
 
     if let Some(rest) = spec.strip_prefix("std/") {
@@ -236,7 +246,7 @@ fn resolve_use_path(
             ];
             for c in candidates {
                 if c.is_file() {
-                    return Ok((c, ModuleKind::Std, None));
+                    return Ok((c, ModuleKind::Std, None, None));
                 }
             }
         }
@@ -265,24 +275,57 @@ fn resolve_use_path(
                 .map(|sc| c.starts_with(sc))
                 .unwrap_or(false)
         });
-        if !in_root && !in_stdlib {
+        let cache_root =
+            git_remote::module_cache_root_override(ctx.module_cache.as_deref());
+        let cache_root = cache_root
+            .canonicalize()
+            .unwrap_or(cache_root);
+        let in_cache = c.starts_with(&cache_root);
+
+        // Relative imports from a git-fetched module live under the module cache,
+        // not the consumer project root — that is intentional and allowed.
+        if !in_root && !in_stdlib && !in_cache {
             return Err(format!(
                 "use path escapes project root: {spec} (resolved {})",
                 c.display()
             ));
         }
         if c.is_file() {
+            // Nested `./dep.lam` inside a remote checkout → treat as git + stable lock key.
+            if let Some((repo_dir, meta)) = git_remote::find_remote_checkout(&c) {
+                // Stay inside the same clone (block `../../` out of the repo).
+                if !c.starts_with(&repo_dir) {
+                    return Err(format!(
+                        "use path escapes remote module repository: {spec}"
+                    ));
+                }
+                let lock_spec = git_remote::git_spec_for_path(&repo_dir, &meta, &c);
+                let commit = std::process::Command::new("git")
+                    .current_dir(&repo_dir)
+                    .args(["rev-parse", "HEAD"])
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        if o.status.success() {
+                            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        } else {
+                            None
+                        }
+                    });
+                return Ok((c, ModuleKind::Git, commit, lock_spec));
+            }
+
             let kind = if in_stdlib && !in_root {
                 ModuleKind::Std
             } else {
                 ModuleKind::Path
             };
-            return Ok((c, kind, None));
+            return Ok((c, kind, None, None));
         }
     }
 
     if normalized.is_file() {
-        return Ok((normalized, ModuleKind::Path, None));
+        return Ok((normalized, ModuleKind::Path, None, None));
     }
     Err(format!("module not found: {spec}"))
 }
@@ -355,6 +398,109 @@ pub target app = tag(Stage.from("alpine:3.19"), "app");
     }
 
     #[test]
+    fn load_git_nested_relative_use() {
+        // Remote package with internal ./ dependency must resolve inside the clone.
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join("pkg")).unwrap();
+        std::fs::write(
+            repo.join("pkg/helpers.lam"),
+            r#"
+pub fn label_me(s: Stage) -> Stage {
+  s.name("nested")
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            repo.join("pkg/mod.lam"),
+            r#"
+use "./helpers.lam";
+pub fn entry(s: Stage) -> Stage {
+  label_me(s)
+}
+"#,
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "test"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+
+        let cache = dir.path().join("cache");
+        let proj = dir.path().join("proj");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        let repo_url = format!(
+            "git+file://{}?ref=main&path=pkg/mod.lam",
+            repo.display()
+        );
+        std::fs::write(
+            proj.join("src/image.lam"),
+            format!(
+                r#"
+use "{repo_url}";
+pub target app = entry(Stage.from("alpine:3.19"));
+"#
+            ),
+        )
+        .unwrap();
+
+        let entry = proj.join("src/image.lam");
+        let src = std::fs::read_to_string(&entry).unwrap();
+        let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
+        let module = parse(&file).unwrap();
+        let mut ctx = ModuleLoadContext::new(proj.clone());
+        ctx.module_cache = Some(cache);
+        let loaded = load_and_merge(&file, module, &ctx).unwrap();
+        assert!(
+            loaded
+                .module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Fn(f) if f.name == "entry")),
+            "entry from remote should import"
+        );
+        assert!(
+            loaded
+                .module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Fn(f) if f.name == "label_me")),
+            "nested ./helpers.lam should resolve and re-export pub fn"
+        );
+        // Nested dep locked under a git+ key, not bare "./helpers.lam"
+        assert!(
+            loaded
+                .resolved
+                .iter()
+                .any(|r| r.spec.contains("path=pkg/helpers.lam") || r.spec.contains("helpers.lam")),
+            "resolved specs: {:?}",
+            loaded.resolved.iter().map(|r| &r.spec).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn load_git_file_remote() {
         let dir = tempdir().unwrap();
         let repo = dir.path().join("repo");
@@ -395,8 +541,6 @@ pub fn remote_tag(s: Stage) -> Stage {
             .unwrap();
 
         let cache = dir.path().join("cache");
-        std::env::set_var("LAMINA_MODULE_CACHE", &cache);
-
         let proj = dir.path().join("proj");
         std::fs::create_dir_all(proj.join("src")).unwrap();
         let repo_url = format!("git+file://{}?ref=main&path=remote.lam", repo.display());
@@ -424,7 +568,8 @@ entry = "src/image.lam"
         let src = std::fs::read_to_string(&entry).unwrap();
         let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
         let module = parse(&file).unwrap();
-        let ctx = ModuleLoadContext::new(proj.clone());
+        let mut ctx = ModuleLoadContext::new(proj.clone());
+        ctx.module_cache = Some(cache);
         let loaded = load_and_merge(&file, module, &ctx).unwrap();
         assert!(loaded.resolved.iter().any(|r| r.kind == ModuleKind::Git));
         assert!(loaded
@@ -432,7 +577,5 @@ entry = "src/image.lam"
             .items
             .iter()
             .any(|i| matches!(i, Item::Fn(f) if f.name == "remote_tag")));
-
-        std::env::remove_var("LAMINA_MODULE_CACHE");
     }
 }
