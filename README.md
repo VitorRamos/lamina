@@ -14,6 +14,7 @@
 
 - User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
 - Architecture: [`docs/design.md`](docs/design.md)
+- Post-1.0 plan: [`docs/post-1.0.md`](docs/post-1.0.md)
 - Agent workflow: [`AGENTS.md`](AGENTS.md)
 - Roadmap: [`docs/roadmap.md`](docs/roadmap.md)
 - Issues: https://github.com/VitorRamos/lamina/issues
