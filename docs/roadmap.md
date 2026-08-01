@@ -84,11 +84,11 @@ Overview: [`post-1.0.md`](post-1.0.md).
 
 | Issue | Theme | Ready? | Notes |
 |-------|--------|--------|--------|
+| [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **shipped (1.1)** | See `docs/remote-modules.md` |
 | [#28](https://github.com/VitorRamos/lamina/issues/28) | LSP MVP (diagnostics, hover, goto) | **agent-ready** | No BuildKit; highest DX leverage |
 | [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | Parallel with LSP; true `buildx -f` |
-| [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **needs-decision** | Phase A syntax/trust first; then impl |
 
-**Suggested order:** #28 ∥ #25, then #27 after design choices A1–A4.
+**Suggested order:** #28 ∥ #25 (remotes done in 1.1).
 
 ## How agents should use this
 

@@ -42,20 +42,17 @@ Client `lamina build` remains supported. The internal ephemeral Dockerfile bridg
 
 ## #27 — Remote modules (summary)
 
-**Phase A (design):** choose syntax, trust, lock schema.  
-**Phase B (impl):** fetch + cache + lock verify + docs.
+**Phase A:** accepted — see [`remote-modules.md`](remote-modules.md).  
+**Phase B:** implemented in 1.1 (`git+https` / `ssh` / `file`, cache, lock `kind`+`commit`).
 
-Default recommendation (subject to product decision):
+| Topic | Decision |
+|-------|----------|
+| Syntax | `use "git+https://host/repo.git?ref=TAG&path=mod.lam";` |
+| Trust | Lockfile sha256 of file bytes; optional git commit |
+| Cache | `$LAMINA_MODULE_CACHE` or `~/.cache/lamina/modules` |
+| Offline | `LAMINA_OFFLINE=1` |
 
-| Topic | Recommendation |
-|-------|----------------|
-| Syntax | `use "git+https://host/repo.git?ref=TAG&path=mod.lam";` (explicit, no magic registry) |
-| Trust | Lockfile sha256 of **resolved file content**; optional commit pin in lock |
-| Cache | `~/.cache/lamina/git/<hash>/` or `$LAMINA_MODULE_CACHE` |
-| Offline | `--locked` + populated cache only; no network |
-| Deny | No arbitrary `https://` of raw files without git ref in v1 remote |
-
-Not in first remote ship: private registry product, signed attestations, recursive marketplace UI.
+Not shipped: package registry, Sigstore, raw HTTP files.
 
 ## #28 — LSP (summary)
 

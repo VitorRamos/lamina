@@ -25,12 +25,13 @@ TargetDecl   ::= "pub" "target" Ident "=" Expr ";" ;
 
 `String` | `Int` | `Bool` | `Stage` | `Mount` | `List[T]`
 
-## Modules (0.2)
+## Modules (0.2 path + 1.1 git remotes)
 
 - `use "./path.lam";` — relative to the importing file; must stay under project root
 - `use "std/name.lam";` — resolved via `LAMINA_STDLIB` or repo `stdlib/`
+- `use "git+https://host/repo.git?ref=TAG&path=file.lam";` — git remote (also `git+ssh`, `git+file`)
 - Only `pub fn` is exported from a used module (transitive `use` inside modules supported)
-- Absolute paths and remote URLs are not allowed in 0.2
+- Absolute local paths are not allowed; bare `http://` remotes are rejected
 
 ## Notes
 

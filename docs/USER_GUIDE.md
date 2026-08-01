@@ -91,14 +91,34 @@ See `docs/grammar.md` and `docs/design.md` for full surface.
 
 ## Lockfile
 
-`lamina lock` records every `use` resolution (spec → path + sha256).
+`lamina lock` records every `use` resolution (spec → path + sha256, plus git commit when remote).
 
 ```bash
 lamina lock examples/compose-demo
 lamina check examples/compose-demo --locked
 ```
 
-Commit `Lamina.lock` for CI reproducibility of path/stdlib modules. Remote modules are not supported in 1.0.
+Commit `Lamina.lock` for CI reproducibility of path/stdlib/**git** modules.
+
+## Remote modules (git)
+
+Syntax (see also [`remote-modules.md`](remote-modules.md)):
+
+```lam
+use "git+https://github.com/acme/images.git?ref=v1.0.0&path=rust/mod.lam";
+```
+
+- **Schemes:** `git+https://`, `git+ssh://`, `git+file://` (local tests)
+- **Required query:** `ref=…`, `path=…` (to a `.lam` file)
+- **Cache:** `LAMINA_MODULE_CACHE` or `~/.cache/lamina/modules`
+- **Offline:** `LAMINA_OFFLINE=1` uses existing cache only (no `git clone`)
+
+```bash
+lamina lock          # may fetch
+LAMINA_OFFLINE=1 lamina check --locked
+```
+
+Private repos use normal Git credentials / SSH agent — do not put tokens in `use` strings.
 
 ## Lints
 

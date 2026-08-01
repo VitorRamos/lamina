@@ -57,6 +57,11 @@ pub fn compile_source_in(
     for p in opts.stdlib_paths.iter().rev() {
         ctx.stdlib_paths.insert(0, p.clone());
     }
+    // LAMINA_OFFLINE=1: never git fetch (path/stdlib still work; use warm module cache).
+    ctx.offline = matches!(
+        std::env::var("LAMINA_OFFLINE").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    );
     let loaded = load_and_merge(&file, module, &ctx)?;
     let module = loaded.module;
     let resolved_modules = loaded.resolved;
