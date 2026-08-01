@@ -17,6 +17,8 @@
 | Path modules + stdlib | `use` + `stdlib/` | supported (0.2) |
 | Multi-platform | `.platform` + `buildx --platform` / `--push` | supported (0.3) |
 | IR lints + `--deny` | empty/unused/root-final/secret-env/unpinned | supported (0.3) |
+| Path lockfile | `Lamina.lock` + `--locked` | supported (1.0) |
+| Lossy Dockerfile dump | `emit-dockerfile` (debug only) | supported (1.0) |
 | Frontend gateway for `.lam` | | post-1.0 |
 
 ## 0.1 solve bridge note

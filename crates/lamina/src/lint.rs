@@ -106,20 +106,27 @@ fn lint_empty_stages(ir: &ModuleIr) -> Vec<LintFinding> {
 
 fn lint_unused_stages(ir: &ModuleIr) -> Vec<LintFinding> {
     let solve = ir.solve_set(&[]);
+    // Names that appear on at least one stage in the solve_set (final chain keeps parent names).
+    let names_in_solve: HashSet<String> = solve
+        .iter()
+        .filter_map(|id| ir.stages.get(id).and_then(|s| s.name.clone()))
+        .collect();
     let mut out = Vec::new();
-    // Named stages not reachable from any target.
+    let mut warned = HashSet::new();
     for (id, st) in &ir.stages {
-        if st.name.is_none() {
+        let Some(name) = &st.name else {
+            continue;
+        };
+        if solve.contains(id) || names_in_solve.contains(name) {
             continue;
         }
-        if !solve.contains(id) {
+        if warned.insert(name.clone()) {
             out.push(LintFinding {
                 id: "unused-stage",
                 severity: Severity::Warning,
                 message: format!(
-                    "named stage#{} ({}) is not reachable from any target (not in solve_set)",
-                    id.0,
-                    st.name.as_deref().unwrap_or("unnamed")
+                    "named stage `{name}` (e.g. stage#{}) is not reachable from any target",
+                    id.0
                 ),
             });
         }
