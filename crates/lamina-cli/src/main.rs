@@ -111,6 +111,8 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+    /// Start the Language Server (stdio). Same as `lamina-lsp`.
+    Lsp,
 }
 
 fn main() -> ExitCode {
@@ -307,6 +309,12 @@ fn run() -> miette::Result<()> {
             if check && dirty {
                 return Err(miette::miette!("formatting differs (run lamina fmt)"));
             }
+        }
+        Commands::Lsp => {
+            // Stdio LSP; logs go to stderr via lamina-lsp.
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| miette::miette!("tokio runtime: {e}"))?;
+            rt.block_on(lamina_lsp::run_stdio());
         }
     }
     Ok(())

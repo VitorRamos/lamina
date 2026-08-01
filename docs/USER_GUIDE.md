@@ -136,9 +136,19 @@ Private repos use normal Git credentials / SSH agent — do not put tokens in `u
 - Do not pass secrets via `--param` / `--build-arg`; use `Mount.secret`.
 - Do not expect plain `docker build -f Dockerfile` on `.lam` sources without `lamina`.
 
+## Language server
+
+```bash
+lamina lsp
+# or: lamina-lsp
+```
+
+See [`lsp.md`](lsp.md) for Helix / Neovim / VS Code setup (diagnostics, hover, goto, format).
+
 ## Further reading
 
 - Architecture: [`design.md`](design.md)
 - Grammar: [`grammar.md`](grammar.md)
 - Capability matrix: [`buildkit-capability.md`](buildkit-capability.md)
+- Remote modules: [`remote-modules.md`](remote-modules.md)
 - Agents / contributors: [`../AGENTS.md`](../AGENTS.md)

@@ -48,6 +48,7 @@ lamina emit-llb [PATH] --target NAME
 lamina emit-dockerfile [PATH] --target NAME   # lossy debug only
 lamina build [PATH] --target NAME -t REF [--platform P] [--push] [--deny LINT] [--locked]
 lamina fmt [PATH|FILE…] [--check]
+lamina lsp                              # Language Server (stdio)
 ```
 
 ```bash
