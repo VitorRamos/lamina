@@ -121,6 +121,13 @@ fn from_hex(c: u8) -> Option<u8> {
 }
 
 pub fn module_cache_root() -> PathBuf {
+    module_cache_root_override(None)
+}
+
+pub fn module_cache_root_override(override_dir: Option<&Path>) -> PathBuf {
+    if let Some(p) = override_dir {
+        return p.to_path_buf();
+    }
     if let Ok(p) = std::env::var("LAMINA_MODULE_CACHE") {
         return PathBuf::from(p);
     }
@@ -144,8 +151,9 @@ pub fn is_offline(ctx_offline: bool) -> bool {
 pub fn resolve_git_module(
     git: &GitUseSpec,
     offline: bool,
+    cache_override: Option<&Path>,
 ) -> std::result::Result<(PathBuf, Option<String>), String> {
-    let cache = module_cache_root();
+    let cache = module_cache_root_override(cache_override);
     let repo_id = short_id(&format!("{}@{}", git.url, git.git_ref));
     let repo_dir = cache.join("git").join(&repo_id);
     let blob_dir = cache.join("blob");
@@ -155,6 +163,7 @@ pub fn resolve_git_module(
     let file_path = repo_dir.join(&git.path);
     if file_path.is_file() {
         let commit = git_rev_parse(&repo_dir).ok();
+        let _ = write_remote_meta(&repo_dir, git);
         return Ok((file_path, commit));
     }
 
@@ -166,6 +175,7 @@ pub fn resolve_git_module(
     }
 
     fetch_repo(&git.url, &git.git_ref, &repo_dir)?;
+    write_remote_meta(&repo_dir, git)?;
     let file_path = repo_dir.join(&git.path);
     if !file_path.is_file() {
         return Err(format!(
@@ -187,6 +197,68 @@ pub fn resolve_git_module(
 
     let commit = git_rev_parse(&repo_dir).ok();
     Ok((file_path, commit))
+}
+
+const REMOTE_META: &str = ".lamina-remote.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RemoteMeta {
+    pub url: String,
+    pub git_ref: String,
+    pub scheme: String,
+}
+
+fn write_remote_meta(repo_dir: &Path, git: &GitUseSpec) -> std::result::Result<(), String> {
+    let meta = RemoteMeta {
+        url: git.url.clone(),
+        git_ref: git.git_ref.clone(),
+        scheme: git.scheme.clone(),
+    };
+    let text = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
+    std::fs::write(repo_dir.join(REMOTE_META), text).map_err(|e| e.to_string())
+}
+
+/// Walk parents of `from` looking for a git checkout managed by Lamina.
+pub fn find_remote_checkout(from: &Path) -> Option<(PathBuf, RemoteMeta)> {
+    let mut cur = from.to_path_buf();
+    loop {
+        let meta_path = cur.join(REMOTE_META);
+        if meta_path.is_file() {
+            if let Ok(text) = std::fs::read_to_string(&meta_path) {
+                if let Ok(meta) = serde_json::from_str::<RemoteMeta>(&text) {
+                    return Some((cur, meta));
+                }
+            }
+        }
+        if !cur.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Build a stable `git+…` use-spec for a file inside a Lamina git checkout.
+pub fn git_spec_for_path(repo_dir: &Path, meta: &RemoteMeta, file: &Path) -> Option<String> {
+    let rel = file.strip_prefix(repo_dir).ok()?;
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    let url_body = match meta.scheme.as_str() {
+        "https" => meta.url.strip_prefix("https://").unwrap_or(&meta.url),
+        "ssh" => meta.url.strip_prefix("ssh://").unwrap_or(&meta.url),
+        "file" => {
+            // file URLs stored as bare path in meta.url
+            return Some(format!(
+                "git+file://{}?ref={}&path={}",
+                meta.url.trim_start_matches('/'),
+                meta.git_ref,
+                rel
+            ));
+        }
+        _ => &meta.url,
+    };
+    Some(format!(
+        "git+{}://{}?ref={}&path={}",
+        meta.scheme, url_body, meta.git_ref, rel
+    ))
 }
 
 /// When --locked and we already know sha256, prefer blob cache (no network).
