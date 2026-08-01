@@ -33,26 +33,27 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
                                             └► hello-static ─► release 0.1
 ```
 
-| # | Title | Size | Depends on |
-|---|--------|------|------------|
-| 1 | Scaffold Cargo workspace | S | — |
-| 2 | Spans + miette diagnostics | S | 1 |
-| 3 | Lexer (MVP) | M | 2 |
-| 4 | AST (MVP) | M | 2 |
-| 5 | Parser + grammar.md | M | 3, 4 |
-| 6 | Lamina.toml config | S | 1 |
-| 7 | Single-file resolve | M | 5 |
-| 8 | Types: pure | M | 7 |
-| 9 | Types: Stage intrinsics | M | 8 |
-| 10 | Build IR + solve_set | M | 2 |
-| 11 | Eval: pure | M | 6, 8, 10 |
-| 12 | Eval: Stage → IR | M | 9, 11 |
-| 13 | LLB lowerer + goldens | L | 10, 12 |
-| 14 | CLI: check / explain / build | L | 6, 13 |
-| 15 | Example hello-static | S | 14 |
-| 16 | Release 0.1.0 | S | 1–15 |
+| Issue | Title | Size | Depends on |
+|-------|--------|------|------------|
+| [#1](https://github.com/VitorRamos/lamina/issues/1) | Epic: v0.1 MVP | L | (tracking) |
+| [#2](https://github.com/VitorRamos/lamina/issues/2) | Scaffold Cargo workspace | S | — |
+| [#3](https://github.com/VitorRamos/lamina/issues/3) | Spans + miette diagnostics | S | #2 |
+| [#4](https://github.com/VitorRamos/lamina/issues/4) | Lexer (MVP) | M | #3 |
+| [#5](https://github.com/VitorRamos/lamina/issues/5) | AST (MVP) | M | #3 |
+| [#6](https://github.com/VitorRamos/lamina/issues/6) | Parser + grammar.md | M | #4, #5 |
+| [#7](https://github.com/VitorRamos/lamina/issues/7) | Lamina.toml config | S | #2 |
+| [#8](https://github.com/VitorRamos/lamina/issues/8) | Single-file resolve | M | #6 |
+| [#9](https://github.com/VitorRamos/lamina/issues/9) | Types: pure | M | #8 |
+| [#10](https://github.com/VitorRamos/lamina/issues/10) | Types: Stage intrinsics | M | #9 |
+| [#11](https://github.com/VitorRamos/lamina/issues/11) | Build IR + solve_set | M | #3 |
+| [#12](https://github.com/VitorRamos/lamina/issues/12) | Eval: pure | M | #7, #9, #11 |
+| [#13](https://github.com/VitorRamos/lamina/issues/13) | Eval: Stage → IR | M | #10, #12 |
+| [#14](https://github.com/VitorRamos/lamina/issues/14) | LLB lowerer + goldens | L | #11, #13 |
+| [#15](https://github.com/VitorRamos/lamina/issues/15) | CLI: check / explain / build | L | #7, #14 |
+| [#16](https://github.com/VitorRamos/lamina/issues/16) | Example hello-static | S | #15 |
+| [#17](https://github.com/VitorRamos/lamina/issues/17) | Release 0.1.0 | S | #16 (+ all above) |
 
-Issue numbers on GitHub may differ slightly; match by title / `pr-plan:N` label.
+**Start here:** [#2](https://github.com/VitorRamos/lamina/issues/2) (only unblocked `agent-ready` issue at bootstrap).
 
 ## Post-0.1 (queued, not agent-ready until 0.1 ships)
 
