@@ -203,14 +203,18 @@ fn resolve_use_uri(spec: &str, file_path: &Path, root: &Path) -> Option<Url> {
         return None;
     }
     if let Some(rest) = spec.strip_prefix("std/") {
-        // Best-effort: project or parent stdlib
-        for base in [root.join("stdlib"), root.parent()?.join("stdlib")] {
+        // Walk ancestors for stdlib/ (same as ModuleLoadContext).
+        let mut cur = root.to_path_buf();
+        loop {
+            let base = cur.join("stdlib");
             let p = base.join(rest);
-            let candidates = [p.clone(), p.with_extension("lam")];
-            for c in candidates {
+            for c in [p.clone(), p.with_extension("lam")] {
                 if c.is_file() {
                     return Url::from_file_path(c).ok();
                 }
+            }
+            if !cur.pop() {
+                break;
             }
         }
         return None;
