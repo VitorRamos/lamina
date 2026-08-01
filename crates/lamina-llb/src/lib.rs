@@ -372,7 +372,9 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
                         .unwrap_or_else(|| format!("stage{}", from.0));
                     out.push_str(&format!("COPY --from={fn_} {src} {dst}\n"));
                 }
-                Instr::Env { key, value } => out.push_str(&format!("ENV {key}={value}\n")),
+                Instr::Env { key, value } => {
+                    out.push_str(&format!("ENV {}\n", dockerfile_kv(key, value)))
+                }
                 Instr::User(u) => out.push_str(&format!("USER {u}\n")),
                 Instr::Entrypoint(a) => {
                     let json = serde_json::to_string(a).unwrap();
@@ -383,7 +385,9 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
                     out.push_str(&format!("CMD {json}\n"));
                 }
                 Instr::Expose(p) => out.push_str(&format!("EXPOSE {p}\n")),
-                Instr::Label { key, value } => out.push_str(&format!("LABEL {key}={value}\n")),
+                Instr::Label { key, value } => {
+                    out.push_str(&format!("LABEL {}\n", dockerfile_kv(key, value)))
+                }
                 Instr::Healthcheck(c) => {
                     // Expect full HEALTHCHECK body or CMD form; pass through.
                     if c.starts_with("CMD") || c.starts_with("NONE") {
@@ -434,6 +438,12 @@ fn mount_flag(m: &MountSpec) -> String {
     }
 }
 
+/// Quote a Dockerfile ENV/LABEL value so spaces and special characters parse.
+fn dockerfile_kv(key: &str, value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("{key}=\"{escaped}\"")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +469,31 @@ pub target app = {
         let s = summary(&g);
         assert!(s.contains("copy_from"), "{s}");
         assert!(s.contains("exports:"), "{s}");
+    }
+
+    #[test]
+    fn internal_dockerfile_quotes_env_with_spaces() {
+        let src = r#"
+pub target app = Stage.from("alpine:3.19")
+  .env("CROSS_TARGET_RUNNER", "/linux-runner aarch64")
+  .label("desc", "hello world")
+  .name("app");
+"#;
+        let c = compile_source(
+            "t.lam",
+            src,
+            LaminaToml::default(),
+            &CompileOptions::default(),
+        )
+        .unwrap();
+        let df = render_internal_dockerfile(&c.ir, &["app".into()]);
+        assert!(
+            df.contains(r#"ENV CROSS_TARGET_RUNNER="/linux-runner aarch64""#),
+            "env not quoted:\n{df}"
+        );
+        assert!(
+            df.contains(r#"LABEL desc="hello world""#),
+            "label not quoted:\n{df}"
+        );
     }
 }
