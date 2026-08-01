@@ -10,7 +10,13 @@
 
 ## Status
 
-Greenfield / design phase. See [`docs/design.md`](docs/design.md).
+Greenfield / design phase.
+
+- Architecture: [`docs/design.md`](docs/design.md)
+- Agent workflow: [`AGENTS.md`](AGENTS.md)
+- Roadmap map: [`docs/roadmap.md`](docs/roadmap.md)
+- Issues: https://github.com/VitorRamos/lamina/issues
+- Milestones: https://github.com/VitorRamos/lamina/milestones
 
 | | |
 |---|---|
