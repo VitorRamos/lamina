@@ -39,16 +39,22 @@ cargo test --workspace
 
 The CLI binary is named **`lamina`** (crate `lamina-cli`).
 
-## Planned CLI
+## CLI (0.1)
 
 ```text
-lamina check
-lamina explain [--target NAME]
-lamina build  [--target NAME] [-t REF]
-lamina emit-llb [--target NAME]   # debug
+lamina check [PATH]
+lamina explain [PATH] --target NAME
+lamina emit-llb [PATH] --target NAME
+lamina build [PATH] --target NAME -t REF
 ```
 
-Scaffold today only supports `--version` / `--help` (see issue tracker for the rest).
+Example:
+
+```bash
+cargo run -p lamina-cli -- check examples/hello-static
+cargo run -p lamina-cli -- build examples/hello-static --target app -t hello-static:dev
+docker run --rm hello-static:dev
+```
 
 ## Workspace layout
 

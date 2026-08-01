@@ -9,4 +9,9 @@ description = "Lamina language library: compile image builds to BuildKit LLB"
 readme = "../../README.md"
 
 [dependencies]
-# Language pipeline crates land in later issues (diagnostics, lexer, …).
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]

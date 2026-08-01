@@ -14,4 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 lamina = { workspace = true }
+lamina-llb = { workspace = true }
+lamina-client = { workspace = true }
 clap = { workspace = true }
+miette = { version = "7", features = ["fancy"] }
