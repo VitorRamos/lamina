@@ -1,0 +1,14 @@
+// Multi-stage hello image (MVP dogfood).
+// Builder writes a tiny script; runtime stage copies it via copy_from.
+
+pub target app = {
+  let builder = Stage.from("alpine:3.19")
+    .workdir("/src")
+    .run("mkdir -p /out && printf '%s\\n' '#!/bin/sh' 'echo hello-static' > /out/app && chmod +x /out/app")
+    .name("builder");
+
+  Stage.from("alpine:3.19")
+    .copy_from(builder, "/out/app", "/app")
+    .entrypoint(["/app"])
+    .name("app")
+};

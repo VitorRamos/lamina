@@ -1,0 +1,7 @@
+[package]
+name = "hello-static"
+version = "0.1.0"
+entry = "src/image.lam"
+
+[build]
+context = "."

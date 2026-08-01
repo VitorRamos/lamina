@@ -1,0 +1,8 @@
+0: image alpine:3.19
+1: exec base=0 cwd=/src user= env=0 cmd=mkdir -p /out && printf '%s\n' '#!/bin/sh' 'echo hello-static' > /out/app && chmod +x /out/app
+2: config base=1 user= workdir=/src entrypoint=None
+3: image alpine:3.19
+4: copy_from base=3 stage#3 /out/app -> /app
+5: config base=4 user= workdir= entrypoint=Some(["/app"])
+exports:
+  app -> stage#7 op#5
