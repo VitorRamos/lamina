@@ -80,15 +80,20 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
 
 ## Post-1.0
 
-| Theme | Notes |
-|-------|--------|
-| BuildKit gateway frontend | #25 |
-| Remote modules | #27 needs-design |
-| LSP | #28 |
+Overview: [`post-1.0.md`](post-1.0.md).
+
+| Issue | Theme | Ready? | Notes |
+|-------|--------|--------|--------|
+| [#28](https://github.com/VitorRamos/lamina/issues/28) | LSP MVP (diagnostics, hover, goto) | **agent-ready** | No BuildKit; highest DX leverage |
+| [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | Parallel with LSP; true `buildx -f` |
+| [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **needs-decision** | Phase A syntax/trust first; then impl |
+
+**Suggested order:** #28 ∥ #25, then #27 after design choices A1–A4.
 
 ## How agents should use this
 
 1. Filter open milestone + label **`agent-ready`**.  
-2. Skip issues whose **Depends on** are still open.  
-3. One issue per session/PR when possible; milestone-closing batches OK when requested.  
-4. Do not pull later-milestone work into earlier PRs.  
+2. Skip **`needs-design`** / **`needs-decision`** until a human closes the decision checklist.  
+3. Skip issues whose **Depends on** are still open.  
+4. One issue per session/PR when possible; milestone-closing batches OK when requested.  
+5. Prefer [`docs/post-1.0.md`](post-1.0.md) for post-1.0 context.
