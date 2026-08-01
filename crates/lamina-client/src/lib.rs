@@ -1,9 +1,7 @@
 //! Solve images via Docker Buildx (BuildKit).
 //!
-//! 0.1 uses an **internal** ephemeral Dockerfile fed only to `docker buildx build`
-//! so stock Docker/Buildx works without a custom gateway frontend. The Dockerfile
-//! is never written into the project tree and is not a product artifact
-//! (see design: hybrid solo-velocity bridge until raw LLB gRPC Solve).
+//! Uses an **internal** ephemeral Dockerfile fed only to `docker buildx build`
+//! so stock Docker/Buildx works without a custom gateway frontend.
 
 use lamina::ir::ModuleIr;
 use lamina_llb::{lower, render_internal_dockerfile, summary};
@@ -28,6 +26,10 @@ pub struct SolveRequest {
     pub tags: Vec<String>,
     pub progress: String,
     pub builder: Option<String>,
+    /// e.g. `["linux/amd64"]` or multi `["linux/amd64","linux/arm64"]`
+    pub platforms: Vec<String>,
+    /// Multi-platform local load is unsupported; push to registry instead.
+    pub push: bool,
 }
 
 pub struct SolveResult {
@@ -54,19 +56,23 @@ pub fn solve(ir: &ModuleIr, req: &SolveRequest) -> Result<SolveResult, SolveErro
         .targets
         .first()
         .cloned()
-        .or_else(|| {
-            // default: last export name from IR
-            ir.targets.keys().next().cloned()
-        })
+        .or_else(|| ir.targets.keys().next().cloned())
         .ok_or_else(|| SolveError::Other("no target to build".into()))?;
 
-    // Stage name in Dockerfile may differ from target name — use stage name from IR
     let stage_name = ir
         .targets
         .get(&target)
         .and_then(|id| ir.stages.get(id))
         .and_then(|s| s.name.clone())
         .unwrap_or_else(|| target.clone());
+
+    let multi = req.platforms.len() > 1;
+    if multi && !req.push {
+        return Err(SolveError::Other(
+            "multi-platform build requires --push (docker cannot --load multi-arch images locally)"
+                .into(),
+        ));
+    }
 
     let mut cmd = Command::new("docker");
     cmd.arg("buildx").arg("build");
@@ -78,8 +84,15 @@ pub fn solve(ir: &ModuleIr, req: &SolveRequest) -> Result<SolveResult, SolveErro
     for t in &req.tags {
         cmd.arg("-t").arg(t);
     }
-    // load into local docker for docker driver
-    cmd.arg("--load");
+    if !req.platforms.is_empty() {
+        cmd.arg("--platform").arg(req.platforms.join(","));
+    }
+    if req.push {
+        cmd.arg("--push");
+    } else {
+        // Single-platform (or no platform flag): load into local docker
+        cmd.arg("--load");
+    }
     cmd.arg("--progress").arg(&req.progress);
     cmd.arg(req.context.as_os_str());
 

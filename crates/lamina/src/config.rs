@@ -53,12 +53,16 @@ fn default_entry() -> String {
 pub struct BuildSection {
     #[serde(default = "default_context")]
     pub context: String,
+    /// Default platforms for `lamina build` (e.g. `["linux/amd64"]`).
+    #[serde(default)]
+    pub platforms: Vec<String>,
 }
 
 impl Default for BuildSection {
     fn default() -> Self {
         Self {
             context: default_context(),
+            platforms: Vec::new(),
         }
     }
 }

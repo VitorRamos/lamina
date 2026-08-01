@@ -39,13 +39,13 @@ cargo test --workspace
 
 The CLI binary is named **`lamina`** (crate `lamina-cli`).
 
-## CLI (0.2)
+## CLI (0.3)
 
 ```text
-lamina check [PATH]
+lamina check [PATH] [--deny LINT|all] [--list-lints]
 lamina explain [PATH] --target NAME
 lamina emit-llb [PATH] --target NAME
-lamina build [PATH] --target NAME -t REF
+lamina build [PATH] --target NAME -t REF [--platform P] [--push] [--deny LINT]
 lamina fmt [PATH|FILE…] [--check]
 ```
 
@@ -53,13 +53,13 @@ Examples:
 
 ```bash
 cargo run -p lamina-cli -- check examples/hello-static
-cargo run -p lamina-cli -- build examples/hello-static --target app -t hello-static:dev
-cargo run -p lamina-cli -- check examples/compose-demo   # path modules
+cargo run -p lamina-cli -- check examples/hello-static --deny unpinned-base
+cargo run -p lamina-cli -- build examples/platform-demo --target app -t platform-demo:dev --platform linux/amd64
 cargo run -p lamina-cli -- fmt examples/compose-demo
-docker run --rm hello-static:dev
 ```
 
-Modules: `use "./lib.lam";` (path) or `use "std/golang.lam";` (stdlib under `stdlib/` / `LAMINA_STDLIB`).
+Modules: `use "./lib.lam";` or `use "std/golang.lam";`.  
+Lints: `empty-stage`, `unused-stage`, `root-final`, `secret-env`, `unpinned-base`.
 ## Workspace layout
 
 ```text

@@ -4,6 +4,7 @@ use crate::config::LaminaToml;
 use crate::diag::Result;
 use crate::eval::{evaluate, EvalCaps, EvalInput};
 use crate::ir::ModuleIr;
+use crate::lint::{lint_ir, LintFinding, LintOptions};
 use crate::modules::{load_and_merge, ModuleLoadContext};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
@@ -18,6 +19,10 @@ pub struct CompileOptions {
     pub targets: Vec<String>,
     /// Extra stdlib search paths (prepended).
     pub stdlib_paths: Vec<PathBuf>,
+    /// Lint deny list (CLI `--deny` merged with Lamina.toml).
+    pub lint_deny: Vec<String>,
+    /// Run lints after IR (default true for project compile).
+    pub run_lints: bool,
 }
 
 pub struct Compiled {
@@ -25,6 +30,7 @@ pub struct Compiled {
     pub ir: ModuleIr,
     pub config: LaminaToml,
     pub root: PathBuf,
+    pub lint_findings: Vec<LintFinding>,
 }
 
 pub fn compile_source(
@@ -67,11 +73,21 @@ pub fn compile_source_in(
         caps,
     };
     let ir = evaluate(&file, &module, &input)?;
+
+    let mut lint_findings = Vec::new();
+    if opts.run_lints {
+        let mut deny = config.lint.deny.clone();
+        deny.extend(opts.lint_deny.clone());
+        let lint_opts = LintOptions::from_lists(&deny, false);
+        lint_findings = lint_ir(&ir, &lint_opts)?;
+    }
+
     Ok(Compiled {
         file,
         ir,
         config,
         root: project_root.to_path_buf(),
+        lint_findings,
     })
 }
 

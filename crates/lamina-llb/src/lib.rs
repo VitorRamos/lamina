@@ -69,6 +69,7 @@ struct StageState {
     expose: Vec<i64>,
     labels: Vec<(String, String)>,
     healthcheck: Option<String>,
+    platform: Option<String>,
 }
 
 pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
@@ -111,6 +112,7 @@ pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
                 Instr::Expose(p) => st.expose.push(*p),
                 Instr::Label { key, value } => st.labels.push((key.clone(), value.clone())),
                 Instr::Healthcheck(c) => st.healthcheck = Some(c.clone()),
+                Instr::Platform(p) => st.platform = Some(p.clone()),
                 Instr::Name(_) | Instr::Arg(_) | Instr::ArgDefault { .. } => {}
                 Instr::Run(cmd) => {
                     let idx = ops.len();
@@ -345,9 +347,18 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
             StageBase::Image(r) => r.clone(),
             StageBase::FromArg(a) => format!("arg:{a}"),
         };
-        out.push_str(&format!("FROM {base} AS {as_name}\n"));
+        let platform = st.instrs.iter().find_map(|i| match i {
+            Instr::Platform(p) => Some(p.as_str()),
+            _ => None,
+        });
+        if let Some(p) = platform {
+            out.push_str(&format!("FROM --platform={p} {base} AS {as_name}\n"));
+        } else {
+            out.push_str(&format!("FROM {base} AS {as_name}\n"));
+        }
         for instr in &st.instrs {
             match instr {
+                Instr::Platform(_) => {}
                 Instr::Workdir(p) => out.push_str(&format!("WORKDIR {p}\n")),
                 Instr::Run(c) => out.push_str(&format!("RUN {c}\n")),
                 Instr::Copy { src, dst } => out.push_str(&format!("COPY {src} {dst}\n")),

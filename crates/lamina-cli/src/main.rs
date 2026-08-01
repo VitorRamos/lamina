@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 use lamina::compile::{compile_project, CompileOptions};
+use lamina::lint::LINT_IDS;
 use lamina_llb::{lower, summary};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,15 +21,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Typecheck + build IR (no BuildKit daemon).
+    /// Typecheck + build IR + lints (no BuildKit daemon).
     Check {
-        /// Project root (directory with Lamina.toml)
         #[arg(default_value = ".")]
         path: PathBuf,
         #[arg(long = "param", value_name = "KEY=VALUE")]
         params: Vec<String>,
         #[arg(long = "build-arg", value_name = "KEY=VALUE")]
         build_args: Vec<String>,
+        /// Promote lint id(s) to errors (`all` / `warnings` = every lint).
+        #[arg(long = "deny", value_name = "LINT")]
+        deny: Vec<String>,
+        /// Print available lint ids
+        #[arg(long)]
+        list_lints: bool,
     },
     /// Print solve_set / stage DAG summary.
     Explain {
@@ -68,13 +74,19 @@ enum Commands {
         builder: Option<String>,
         #[arg(long, default_value = "auto")]
         progress: String,
+        /// Target platform(s), e.g. linux/amd64 or linux/amd64,linux/arm64
+        #[arg(long = "platform", value_name = "PLAT")]
+        platforms: Vec<String>,
+        /// Push to registry (required for multi-platform)
+        #[arg(long)]
+        push: bool,
+        #[arg(long = "deny", value_name = "LINT")]
+        deny: Vec<String>,
     },
     /// Format `.lam` sources (project entry or explicit files).
     Fmt {
-        /// Project root or `.lam` file paths
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-        /// Check formatting without writing
         #[arg(long)]
         check: bool,
     },
@@ -95,13 +107,25 @@ fn run() -> miette::Result<()> {
             path,
             params,
             build_args,
+            deny,
+            list_lints,
         } => {
-            let opts = options(params, build_args);
+            if list_lints {
+                for id in LINT_IDS {
+                    println!("{id}");
+                }
+                return Ok(());
+            }
+            let opts = options(params, build_args, deny);
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
+            for f in &compiled.lint_findings {
+                eprintln!("warning: [{}] {}", f.id, f.message);
+            }
             println!(
-                "ok: {} target(s) in {}",
+                "ok: {} target(s) in {} ({} lint warning(s))",
                 compiled.ir.targets.len(),
-                compiled.config.package.name
+                compiled.config.package.name,
+                compiled.lint_findings.len()
             );
         }
         Commands::Explain {
@@ -110,7 +134,8 @@ fn run() -> miette::Result<()> {
             params,
             build_args,
         } => {
-            let opts = options(params, build_args);
+            let mut opts = options(params, build_args, vec![]);
+            opts.run_lints = false;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
             print!("{}", compiled.ir.explain(&target));
         }
@@ -120,7 +145,8 @@ fn run() -> miette::Result<()> {
             params,
             build_args,
         } => {
-            let opts = options(params, build_args);
+            let mut opts = options(params, build_args, vec![]);
+            opts.run_lints = false;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
             let g = lower(&compiled.ir, &target);
             print!("{}", summary(&g));
@@ -133,9 +159,15 @@ fn run() -> miette::Result<()> {
             build_args,
             builder,
             progress,
+            platforms,
+            push,
+            deny,
         } => {
-            let opts = options(params, build_args);
+            let opts = options(params, build_args, deny);
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
+            for f in &compiled.lint_findings {
+                eprintln!("warning: [{}] {}", f.id, f.message);
+            }
             let context = compiled.config.context_path(&compiled.root);
             lamina_client::ensure_context(&context).map_err(|e| miette::miette!(e))?;
             let tags = if tags.is_empty() {
@@ -143,15 +175,31 @@ fn run() -> miette::Result<()> {
             } else {
                 tags
             };
+            let mut plats = platforms;
+            if plats.is_empty() {
+                plats = compiled.config.build.platforms.clone();
+            }
+            // flatten comma-separated --platform values
+            let platforms: Vec<String> = plats
+                .into_iter()
+                .flat_map(|p| {
+                    p.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .collect();
             let req = lamina_client::SolveRequest {
                 context,
                 targets: target,
                 tags: tags.clone(),
                 progress,
                 builder,
+                platforms,
+                push,
             };
             eprintln!(
-                "note: 0.1 solve uses an internal BuildKit bridge (ephemeral, not written to the project)."
+                "note: solve uses an internal BuildKit bridge (ephemeral, not written to the project)."
             );
             lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
             println!("built {}", tags.join(", "));
@@ -171,7 +219,6 @@ fn run() -> miette::Result<()> {
                     if entry.is_file() {
                         files.push(entry);
                     }
-                    // also format sibling modules under src/
                     let src_dir = p.join("src");
                     if src_dir.is_dir() {
                         if let Ok(rd) = std::fs::read_dir(src_dir) {
@@ -219,12 +266,23 @@ fn run() -> miette::Result<()> {
     Ok(())
 }
 
-fn options(params: Vec<String>, build_args: Vec<String>) -> CompileOptions {
+fn options(params: Vec<String>, build_args: Vec<String>, deny: Vec<String>) -> CompileOptions {
+    let lint_deny: Vec<String> = deny
+        .into_iter()
+        .flat_map(|d| {
+            d.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .collect();
     CompileOptions {
         params: parse_kv(params),
         build_args: parse_kv(build_args),
         targets: vec![],
         stdlib_paths: vec![],
+        lint_deny,
+        run_lints: true,
     }
 }
 

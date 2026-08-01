@@ -64,16 +64,22 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
 | [#20](https://github.com/VitorRamos/lamina/issues/20) | Stdlib recipes | shipped |
 | [#21](https://github.com/VitorRamos/lamina/issues/21) | `lamina fmt` | shipped |
 
+## v0.3 — Hardening
+
+| Issue | Theme | Status |
+|-------|--------|--------|
+| [#22](https://github.com/VitorRamos/lamina/issues/22) | IR lint pack + `--deny` | shipped |
+| [#23](https://github.com/VitorRamos/lamina/issues/23) | Multi-platform / multi-arch | shipped |
+
 ## Later
 
 | Theme | Notes |
 |-------|--------|
-| Lint pack | v0.3 |
-| Multi-platform | v0.3 |
 | Lossy emit-dockerfile | Optional debug only |
 | BuildKit gateway frontend | 1.x / post-1.0 |
-| Lockfile / remote modules | Open design |
-| LSP | After types + fmt |
+| Path lockfile | v1.0 |
+| Remote modules | Open design |
+| LSP | post-1.0 |
 
 ## How agents should use this
 
