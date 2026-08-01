@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 — 2026-08-01
+
+### Added
+
+- Remote git modules: `use "git+https://…?ref=&path=";` (`git+ssh`, `git+file`)
+- Module cache (`LAMINA_MODULE_CACHE` / `~/.cache/lamina/modules`) + content blobs
+- `LAMINA_OFFLINE=1` for no-fetch resolution
+- Lockfile records `kind` + optional `commit` for git modules
+- Docs: `docs/remote-modules.md` (Phase A decisions accepted)
+
 ## 1.0.0 — 2026-08-01
 
 ### Added

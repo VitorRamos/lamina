@@ -10,6 +10,7 @@ pub mod config;
 pub mod diag;
 pub mod eval;
 pub mod fmt;
+pub mod git_remote;
 pub mod ir;
 pub mod lexer;
 pub mod lint;

@@ -1,8 +1,9 @@
-//! Path-only module loading (`use "…";`).
+//! Module loading: path, stdlib, and git remotes (`use "…";`).
 
 use crate::ast::{FnDecl, Item, Module};
 use crate::diag::{CompileError, DiagnosticMsg, Result};
-use crate::lock::{hash_file, ResolvedModule};
+use crate::git_remote::{self, parse_git_use};
+use crate::lock::{hash_file, ModuleKind, ResolvedModule};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
 use std::collections::{HashMap, HashSet};
@@ -13,6 +14,8 @@ pub struct ModuleLoadContext {
     pub project_root: PathBuf,
     /// Directories searched for `std/…` imports (first hit wins).
     pub stdlib_paths: Vec<PathBuf>,
+    /// Disallow network / git fetch (env `LAMINA_OFFLINE` also applies).
+    pub offline: bool,
 }
 
 impl ModuleLoadContext {
@@ -34,6 +37,7 @@ impl ModuleLoadContext {
         Self {
             project_root,
             stdlib_paths,
+            offline: false,
         }
     }
 }
@@ -44,7 +48,7 @@ pub struct LoadResult {
     pub resolved: Vec<ResolvedModule>,
 }
 
-/// Expand `use` items: load path modules and merge exported `pub fn` into the entry module.
+/// Expand `use` items: load modules and merge exported `pub fn` into the entry module.
 pub fn load_and_merge(
     entry: &SourceFile,
     module: Module,
@@ -103,10 +107,11 @@ fn expand_uses(
     for item in module.items {
         match item {
             Item::Use(u) => {
-                let path = resolve_use_path(&u.path, from_dir, state.ctx).map_err(|msg| {
-                    CompileError::single(Some(file), DiagnosticMsg::error(msg, Some(u.span)))
-                })?;
-                record_resolved(&u.path, &path, state.resolved_map)?;
+                let (path, kind, commit) =
+                    resolve_use_path(&u.path, from_dir, state.ctx).map_err(|msg| {
+                        CompileError::single(Some(file), DiagnosticMsg::error(msg, Some(u.span)))
+                    })?;
+                record_resolved(&u.path, &path, kind, commit, state.resolved_map)?;
                 let exports = load_exports(&path, state)?;
                 for f in exports {
                     if !seen.insert(f.name.clone()) {
@@ -140,6 +145,8 @@ fn expand_uses(
 fn record_resolved(
     spec: &str,
     path: &Path,
+    kind: ModuleKind,
+    commit: Option<String>,
     resolved_map: &mut HashMap<String, ResolvedModule>,
 ) -> Result<()> {
     if resolved_map.contains_key(spec) {
@@ -157,6 +164,8 @@ fn record_resolved(
             spec: spec.to_string(),
             path: path.to_path_buf(),
             sha256,
+            commit,
+            kind,
         },
     );
     Ok(())
@@ -205,11 +214,18 @@ fn load_exports(path: &Path, state: &mut ExpandState<'_>) -> Result<Vec<FnDecl>>
     Ok(exports)
 }
 
+/// Returns (filesystem path, kind, optional git commit).
 fn resolve_use_path(
     spec: &str,
     from_dir: &Path,
     ctx: &ModuleLoadContext,
-) -> std::result::Result<PathBuf, String> {
+) -> std::result::Result<(PathBuf, ModuleKind, Option<String>), String> {
+    if spec.starts_with("git+") {
+        let git = parse_git_use(spec)?;
+        let (path, commit) = git_remote::resolve_git_module(&git, ctx.offline)?;
+        return Ok((path, ModuleKind::Git, commit));
+    }
+
     if let Some(rest) = spec.strip_prefix("std/") {
         let rel = PathBuf::from(rest);
         for root in &ctx.stdlib_paths {
@@ -220,7 +236,7 @@ fn resolve_use_path(
             ];
             for c in candidates {
                 if c.is_file() {
-                    return Ok(c);
+                    return Ok((c, ModuleKind::Std, None));
                 }
             }
         }
@@ -256,12 +272,17 @@ fn resolve_use_path(
             ));
         }
         if c.is_file() {
-            return Ok(c);
+            let kind = if in_stdlib && !in_root {
+                ModuleKind::Std
+            } else {
+                ModuleKind::Path
+            };
+            return Ok((c, kind, None));
         }
     }
 
     if normalized.is_file() {
-        return Ok(normalized);
+        return Ok((normalized, ModuleKind::Path, None));
     }
     Err(format!("module not found: {spec}"))
 }
@@ -284,6 +305,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::process::Command;
     use tempfile::tempdir;
 
     #[test]
@@ -329,5 +351,88 @@ pub target app = tag(Stage.from("alpine:3.19"), "app");
         assert!(!names.contains(&"hidden"));
         assert_eq!(loaded.resolved.len(), 1);
         assert_eq!(loaded.resolved[0].spec, "./lib.lam");
+        assert_eq!(loaded.resolved[0].kind, ModuleKind::Path);
+    }
+
+    #[test]
+    fn load_git_file_remote() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(
+            repo.join("remote.lam"),
+            r#"
+pub fn remote_tag(s: Stage) -> Stage {
+  s.name("from-git")
+}
+"#,
+        )
+        .unwrap();
+        Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "test"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+
+        let cache = dir.path().join("cache");
+        std::env::set_var("LAMINA_MODULE_CACHE", &cache);
+
+        let proj = dir.path().join("proj");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        let repo_url = format!("git+file://{}?ref=main&path=remote.lam", repo.display());
+        std::fs::write(
+            proj.join("src/image.lam"),
+            format!(
+                r#"
+use "{repo_url}";
+pub target app = remote_tag(Stage.from("alpine:3.19"));
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join("Lamina.toml"),
+            r#"
+[package]
+name = "remote-demo"
+entry = "src/image.lam"
+"#,
+        )
+        .unwrap();
+
+        let entry = proj.join("src/image.lam");
+        let src = std::fs::read_to_string(&entry).unwrap();
+        let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
+        let module = parse(&file).unwrap();
+        let ctx = ModuleLoadContext::new(proj.clone());
+        let loaded = load_and_merge(&file, module, &ctx).unwrap();
+        assert!(loaded.resolved.iter().any(|r| r.kind == ModuleKind::Git));
+        assert!(loaded
+            .module
+            .items
+            .iter()
+            .any(|i| matches!(i, Item::Fn(f) if f.name == "remote_tag")));
+
+        std::env::remove_var("LAMINA_MODULE_CACHE");
     }
 }
