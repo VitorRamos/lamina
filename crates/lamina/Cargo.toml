@@ -1,0 +1,12 @@
+[package]
+name = "lamina"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Lamina language library: compile image builds to BuildKit LLB"
+readme = "../../README.md"
+
+[dependencies]
+# Language pipeline crates land in later issues (diagnostics, lexer, …).
