@@ -74,16 +74,9 @@ pub fn analyze(path: &Path, source: &str) -> Analysis {
 
     let module_for_types = match load_and_merge(&file, module.clone(), &ctx) {
         Ok(loaded) => {
-            for item in &loaded.module.items {
-                if let Item::Fn(f) = item {
-                    analysis.symbols.entry(f.name.clone()).or_insert(SymbolDef {
-                        name: f.name.clone(),
-                        detail: format_fn_sig(f),
-                        range: span_to_range(&file, f.span),
-                        target_uri: None,
-                    });
-                }
-            }
+            // Index pub fns from resolved modules (path / std / git) with real file URIs
+            // so goto-definition jumps into golang.lam etc., not the consumer file.
+            index_imported_modules(&loaded.resolved, &mut analysis);
             loaded.module
         }
         Err(e) => {
@@ -104,6 +97,41 @@ pub fn analyze(path: &Path, source: &str) -> Analysis {
     let _ = LaminaToml::load_or_default(root.join("Lamina.toml"));
 
     analysis
+}
+
+fn index_imported_modules(
+    resolved: &[lamina::lock::ResolvedModule],
+    analysis: &mut Analysis,
+) {
+    for rm in resolved {
+        let Ok(src) = std::fs::read_to_string(&rm.path) else {
+            continue;
+        };
+        let Ok(uri) = Url::from_file_path(&rm.path) else {
+            continue;
+        };
+        let sf = SourceFile::new(FileId(0), rm.path.display().to_string(), src);
+        let Ok(mod_) = parse(&sf) else {
+            continue;
+        };
+        for item in &mod_.items {
+            if let Item::Fn(f) = item {
+                if !f.is_pub {
+                    continue;
+                }
+                // Prefer definition site in the module file over any local stub.
+                analysis.symbols.insert(
+                    f.name.clone(),
+                    SymbolDef {
+                        name: f.name.clone(),
+                        detail: format!("{}  ({})", format_fn_sig(f), rm.path.display()),
+                        range: span_to_range(&sf, f.span),
+                        target_uri: Some(uri.clone()),
+                    },
+                );
+            }
+        }
+    }
 }
 
 fn format_fn_sig(f: &lamina::ast::FnDecl) -> String {
@@ -324,22 +352,11 @@ pub fn goto_at(analysis: &Analysis, pos: Position) -> Option<Location> {
     let _ = (start, end);
 
     if let Some(sym) = analysis.symbols.get(word) {
-        if let Some(uri) = &sym.target_uri {
-            return Some(Location {
-                uri: uri.clone(),
-                range: Range {
-                    start: Position {
-                        line: 0,
-                        character: 0,
-                    },
-                    end: Position {
-                        line: 0,
-                        character: 0,
-                    },
-                },
-            });
-        }
-        let uri = Url::from_file_path(&analysis.path).ok()?;
+        let uri = if let Some(uri) = &sym.target_uri {
+            uri.clone()
+        } else {
+            Url::from_file_path(&analysis.path).ok()?
+        };
         return Some(Location {
             uri,
             range: sym.range,
@@ -460,5 +477,51 @@ pub target app = helper(Stage.from("alpine:3.19"));
         let a = analyze(&path, &src);
         assert!(a.symbols.contains_key("helper"));
         assert!(a.symbols.contains_key("app"));
+    }
+
+    #[test]
+    fn goto_imported_stdlib_fn() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        std::fs::create_dir_all(repo.join("stdlib")).unwrap();
+        std::fs::write(
+            repo.join("stdlib/golang.lam"),
+            r#"
+pub fn from_version(version: String) -> Stage {
+  Stage.from("golang:" + version)
+}
+"#,
+        )
+        .unwrap();
+        let proj = repo.join("examples/stdlib-go");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        let image = proj.join("src/image.lam");
+        std::fs::write(
+            &image,
+            r#"
+use "std/golang.lam";
+pub target app = from_version("1.22-alpine").name("app");
+"#,
+        )
+        .unwrap();
+        let src = std::fs::read_to_string(&image).unwrap();
+        let a = analyze(&image, &src);
+        let sym = a
+            .symbols
+            .get("from_version")
+            .expect("from_version should be indexed from stdlib");
+        let uri = sym.target_uri.as_ref().expect("should point at golang.lam");
+        let path = uri.to_file_path().unwrap();
+        assert!(
+            path.ends_with("stdlib/golang.lam") || path.ends_with("golang.lam"),
+            "uri path = {path:?}"
+        );
+        // Hover word position: start of from_version on line 1 (0-based)
+        let pos = Position {
+            line: 1,
+            character: 18, // inside from_version(
+        };
+        let loc = goto_at(&a, pos).expect("goto from_version");
+        assert_eq!(&loc.uri, uri);
     }
 }
