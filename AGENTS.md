@@ -155,7 +155,7 @@ Before BuildKit exists, unit + golden tests are enough for language/IR/LLB-summa
 | **v1.0 — Stable** | Path lockfile, docs, stability | Tagged 1.0 |
 | **Post-1.0** | Frontend gateway, remote modules, optional emit-dockerfile, LSP | Not blocking 1.0 |
 
-Full issue DAG mirrors `docs/design.md` § PR Plan (issues #1–#14 for 0.1).
+Full issue DAG: [`docs/roadmap.md`](docs/roadmap.md). Epic [#1](https://github.com/VitorRamos/lamina/issues/1); implement **#2 → #17** for 0.1.
 
 ---
 
@@ -224,7 +224,7 @@ One logical change per PR. Do not bundle “while I was here” cleanups.
 
 **Implement next ready issue:**
 
-> Read AGENTS.md and docs/design.md. List open milestone v0.1 issues labeled agent-ready whose dependencies are closed. Pick the lowest issue number. Implement only that issue. Open a PR with Closes #N.
+> Read AGENTS.md, docs/design.md, and docs/roadmap.md. List open milestone v0.1 issues labeled `agent-ready` whose dependencies are closed (see issue comments / Depends on). Pick the lowest issue number (first session: #2 scaffold). Implement only that issue. Open a PR with Closes #N.
 
 **Review mode:**
 
