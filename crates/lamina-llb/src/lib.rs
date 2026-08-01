@@ -4,7 +4,7 @@
 //! Dockerfile-less path in `lamina-client` using `docker buildx` + BuildKit
 //! gateway when available. This crate owns graph construction + goldens.
 
-use lamina::ir::{Instr, ModuleIr, StageBase, StageId};
+use lamina::ir::{Instr, ModuleIr, MountKind, MountSpec, StageBase, StageId};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,7 +44,7 @@ pub enum LlbOp {
         src: String,
         dst: String,
     },
-    /// Image config mutation (entrypoint/cmd/user/env/expose) recorded for export.
+    /// Image config mutation (entrypoint/cmd/user/env/expose/label/healthcheck).
     Config {
         base: usize,
         entrypoint: Option<Vec<String>>,
@@ -53,6 +53,8 @@ pub enum LlbOp {
         env: Vec<(String, String)>,
         expose: Vec<i64>,
         workdir: Option<String>,
+        labels: Vec<(String, String)>,
+        healthcheck: Option<String>,
     },
 }
 
@@ -65,6 +67,8 @@ struct StageState {
     entrypoint: Option<Vec<String>>,
     cmd: Option<Vec<String>>,
     expose: Vec<i64>,
+    labels: Vec<(String, String)>,
+    healthcheck: Option<String>,
 }
 
 pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
@@ -105,9 +109,25 @@ pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
                 Instr::Entrypoint(a) => st.entrypoint = Some(a.clone()),
                 Instr::Cmd(a) => st.cmd = Some(a.clone()),
                 Instr::Expose(p) => st.expose.push(*p),
+                Instr::Label { key, value } => st.labels.push((key.clone(), value.clone())),
+                Instr::Healthcheck(c) => st.healthcheck = Some(c.clone()),
                 Instr::Name(_) | Instr::Arg(_) | Instr::ArgDefault { .. } => {}
                 Instr::Run(cmd) => {
                     let idx = ops.len();
+                    ops.push(LlbOp::Exec {
+                        base: st.op,
+                        input: st.op,
+                        cmds: vec!["/bin/sh".into(), "-c".into(), cmd.clone()],
+                        cwd: st.workdir.clone(),
+                        env: st.env.clone(),
+                        user: st.user.clone(),
+                    });
+                    st.op = idx;
+                }
+                Instr::RunWith { cmd, mounts } => {
+                    let idx = ops.len();
+                    // Mounts recorded in summary via exec; full mount metadata in dockerfile bridge.
+                    let _ = mounts;
                     ops.push(LlbOp::Exec {
                         base: st.op,
                         input: st.op,
@@ -164,6 +184,8 @@ pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
             || !st.env.is_empty()
             || !st.expose.is_empty()
             || st.workdir.is_some()
+            || !st.labels.is_empty()
+            || st.healthcheck.is_some()
         {
             let idx = ops.len();
             ops.push(LlbOp::Config {
@@ -174,6 +196,8 @@ pub fn lower(ir: &ModuleIr, targets: &[String]) -> LlbGraph {
                 env: st.env.clone(),
                 expose: st.expose.clone(),
                 workdir: st.workdir.clone(),
+                labels: st.labels.clone(),
+                healthcheck: st.healthcheck.clone(),
             });
             st.op = idx;
         }
@@ -279,11 +303,15 @@ pub fn summary(graph: &LlbGraph) -> String {
                 entrypoint,
                 user,
                 workdir,
+                labels,
+                healthcheck,
                 ..
             } => format!(
-                "{i}: config base={base} user={} workdir={} entrypoint={:?}",
+                "{i}: config base={base} user={} workdir={} labels={} healthcheck={} entrypoint={:?}",
                 user.as_deref().unwrap_or(""),
                 workdir.as_deref().unwrap_or(""),
+                labels.len(),
+                healthcheck.as_deref().unwrap_or(""),
                 entrypoint
             ),
         };
@@ -344,6 +372,25 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
                     out.push_str(&format!("CMD {json}\n"));
                 }
                 Instr::Expose(p) => out.push_str(&format!("EXPOSE {p}\n")),
+                Instr::Label { key, value } => out.push_str(&format!("LABEL {key}={value}\n")),
+                Instr::Healthcheck(c) => {
+                    // Expect full HEALTHCHECK body or CMD form; pass through.
+                    if c.starts_with("CMD") || c.starts_with("NONE") {
+                        out.push_str(&format!("HEALTHCHECK {c}\n"));
+                    } else {
+                        out.push_str(&format!("HEALTHCHECK CMD {c}\n"));
+                    }
+                }
+                Instr::RunWith { cmd, mounts } => {
+                    let mut line = String::from("RUN");
+                    for m in mounts {
+                        line.push_str(&format!(" {}", mount_flag(m)));
+                    }
+                    line.push(' ');
+                    line.push_str(cmd);
+                    line.push('\n');
+                    out.push_str(&line);
+                }
                 Instr::Name(_) | Instr::Arg(_) | Instr::ArgDefault { .. } => {}
             }
         }
@@ -353,6 +400,27 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
     // Final stage: if single export target, ensure it's last FROM (already is if ordered)
     // For multiple targets, buildx --target selects.
     out
+}
+
+fn mount_flag(m: &MountSpec) -> String {
+    match m.kind {
+        MountKind::Cache => {
+            format!("--mount=type=cache,target={},id={}", m.target, m.id)
+        }
+        MountKind::Secret => {
+            format!("--mount=type=secret,id={},target={}", m.id, m.target)
+        }
+        MountKind::Ssh => {
+            if m.id.is_empty() {
+                format!("--mount=type=ssh,target={}", m.target)
+            } else {
+                format!("--mount=type=ssh,id={},target={}", m.id, m.target)
+            }
+        }
+        MountKind::Bind => {
+            format!("--mount=type=bind,source={},target={}", m.source, m.target)
+        }
+    }
 }
 
 #[cfg(test)]

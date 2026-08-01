@@ -18,6 +18,7 @@ pub enum TokenKind {
     In,
     True,
     False,
+    Use,
     // Soft keyword also used as call: param
     // Identifiers / literals
     Ident(String),
@@ -222,6 +223,7 @@ impl<'a> Lexer<'a> {
             "in" => TokenKind::In,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
+            "use" => TokenKind::Use,
             _ => TokenKind::Ident(s.to_string()),
         };
         self.push(kind, start);

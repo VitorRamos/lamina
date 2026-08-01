@@ -1,0 +1,3 @@
+use "./lib.lam";
+
+pub target app = alpine_labeled("compose-demo").entrypoint(["/bin/true"]);

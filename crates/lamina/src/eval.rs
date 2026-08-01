@@ -2,7 +2,9 @@
 
 use crate::ast::*;
 use crate::diag::{CompileError, DiagnosticMsg, Result};
-use crate::ir::{BuildArgDecl, Instr, IrBuilder, ModuleIr, StageBase, StageId};
+use crate::ir::{
+    BuildArgDecl, Instr, IrBuilder, ModuleIr, MountKind, MountSpec, StageBase, StageId,
+};
 use crate::span::SourceFile;
 use std::collections::{BTreeMap, HashMap};
 
@@ -16,6 +18,7 @@ pub enum Value {
     Bool(bool),
     List(Vec<Value>),
     Stage(StageId),
+    Mount(MountSpec),
 }
 
 impl Value {
@@ -37,6 +40,21 @@ impl Value {
                 let mut out = Vec::new();
                 for x in xs {
                     out.push(x.as_string()?.to_string());
+                }
+                Some(out)
+            }
+            _ => None,
+        }
+    }
+    fn as_list_mount(&self) -> Option<Vec<MountSpec>> {
+        match self {
+            Value::List(xs) => {
+                let mut out = Vec::new();
+                for x in xs {
+                    match x {
+                        Value::Mount(m) => out.push(m.clone()),
+                        _ => return None,
+                    }
                 }
                 Some(out)
             }
@@ -106,6 +124,7 @@ pub fn evaluate(file: &SourceFile, module: &Module, input: &EvalInput) -> Result
 
     for item in &module.items {
         match item {
+            Item::Use(_) => {}
             Item::Arg(a) => {
                 build_arg_decls.push(BuildArgDecl {
                     name: a.name.clone(),
@@ -273,6 +292,52 @@ impl<'a> Evaluator<'a> {
                     Ok(Value::Stage(id))
                 }
             }
+            ExprKind::MountCtor { kind, args } => {
+                let mut vals = Vec::new();
+                for a in args {
+                    vals.push(self.eval_expr(a, env)?);
+                }
+                let spec = match kind.as_str() {
+                    "cache" => MountSpec {
+                        kind: MountKind::Cache,
+                        target: req_str(&vals, 0, expr, self.file)?,
+                        id: req_str(&vals, 1, expr, self.file)?,
+                        source: String::new(),
+                    },
+                    "secret" => MountSpec {
+                        kind: MountKind::Secret,
+                        id: req_str(&vals, 0, expr, self.file)?,
+                        target: req_str(&vals, 1, expr, self.file)?,
+                        source: String::new(),
+                    },
+                    "ssh" => MountSpec {
+                        kind: MountKind::Ssh,
+                        target: req_str(&vals, 0, expr, self.file)?,
+                        id: if vals.len() > 1 {
+                            req_str(&vals, 1, expr, self.file)?
+                        } else {
+                            String::new()
+                        },
+                        source: String::new(),
+                    },
+                    "bind" => MountSpec {
+                        kind: MountKind::Bind,
+                        source: req_str(&vals, 0, expr, self.file)?,
+                        target: req_str(&vals, 1, expr, self.file)?,
+                        id: String::new(),
+                    },
+                    other => {
+                        return Err(CompileError::single(
+                            Some(self.file),
+                            DiagnosticMsg::error(
+                                format!("unknown Mount ctor `{other}`"),
+                                Some(expr.span),
+                            ),
+                        ))
+                    }
+                };
+                Ok(Value::Mount(spec))
+            }
             ExprKind::Param { name, default } => {
                 if let Some(v) = self.input.params.get(name) {
                     return Ok(Value::String(v.clone()));
@@ -392,6 +457,20 @@ impl<'a> Evaluator<'a> {
                 Instr::Expose(*p)
             }
             "name" => Instr::Name(req_str(&vals, 0, expr, self.file)?),
+            "label" => Instr::Label {
+                key: req_str(&vals, 0, expr, self.file)?,
+                value: req_str(&vals, 1, expr, self.file)?,
+            },
+            "healthcheck" => Instr::Healthcheck(req_str(&vals, 0, expr, self.file)?),
+            "run_with" => Instr::RunWith {
+                cmd: req_str(&vals, 0, expr, self.file)?,
+                mounts: vals.get(1).and_then(|v| v.as_list_mount()).ok_or_else(|| {
+                    CompileError::single(
+                        Some(self.file),
+                        DiagnosticMsg::error("run_with expects List[Mount]", Some(expr.span)),
+                    )
+                })?,
+            },
             other => {
                 return Err(CompileError::single(
                     Some(self.file),

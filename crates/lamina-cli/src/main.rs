@@ -69,6 +69,15 @@ enum Commands {
         #[arg(long, default_value = "auto")]
         progress: String,
     },
+    /// Format `.lam` sources (project entry or explicit files).
+    Fmt {
+        /// Project root or `.lam` file paths
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+        /// Check formatting without writing
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -147,6 +156,65 @@ fn run() -> miette::Result<()> {
             lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
             println!("built {}", tags.join(", "));
         }
+        Commands::Fmt { paths, check } => {
+            let mut files: Vec<PathBuf> = Vec::new();
+            for p in paths {
+                if p.is_dir() {
+                    let cfg = p.join("Lamina.toml");
+                    let entry = if cfg.exists() {
+                        lamina::config::LaminaToml::load(&cfg)
+                            .map(|c| c.entry_path(&p))
+                            .unwrap_or_else(|_| p.join("src/image.lam"))
+                    } else {
+                        p.join("src/image.lam")
+                    };
+                    if entry.is_file() {
+                        files.push(entry);
+                    }
+                    // also format sibling modules under src/
+                    let src_dir = p.join("src");
+                    if src_dir.is_dir() {
+                        if let Ok(rd) = std::fs::read_dir(src_dir) {
+                            for e in rd.flatten() {
+                                let path = e.path();
+                                if path.extension().and_then(|x| x.to_str()) == Some("lam")
+                                    && !files.contains(&path)
+                                {
+                                    files.push(path);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    files.push(p);
+                }
+            }
+            if files.is_empty() {
+                return Err(miette::miette!("no .lam files to format"));
+            }
+            let mut dirty = false;
+            for f in files {
+                let src = std::fs::read_to_string(&f)
+                    .map_err(|e| miette::miette!("read {}: {e}", f.display()))?;
+                let formatted = lamina::fmt::format_source(f.to_string_lossy().as_ref(), &src)
+                    .map_err(to_miette)?;
+                if formatted != src {
+                    if check {
+                        eprintln!("would reformat {}", f.display());
+                        dirty = true;
+                    } else {
+                        std::fs::write(&f, formatted)
+                            .map_err(|e| miette::miette!("write {}: {e}", f.display()))?;
+                        println!("formatted {}", f.display());
+                    }
+                } else if !check {
+                    println!("unchanged {}", f.display());
+                }
+            }
+            if check && dirty {
+                return Err(miette::miette!("formatting differs (run lamina fmt)"));
+            }
+        }
     }
     Ok(())
 }
@@ -156,6 +224,7 @@ fn options(params: Vec<String>, build_args: Vec<String>) -> CompileOptions {
         params: parse_kv(params),
         build_args: parse_kv(build_args),
         targets: vec![],
+        stdlib_paths: vec![],
     }
 }
 

@@ -9,14 +9,14 @@ members = [
 default-members = ["crates/lamina-cli"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitorRamos/lamina"
 rust-version = "1.74"
 
 [workspace.dependencies]
-lamina = { path = "crates/lamina", version = "0.1.0" }
-lamina-llb = { path = "crates/lamina-llb", version = "0.1.0" }
-lamina-client = { path = "crates/lamina-client", version = "0.1.0" }
+lamina = { path = "crates/lamina", version = "0.2.0" }
+lamina-llb = { path = "crates/lamina-llb", version = "0.2.0" }
+lamina-client = { path = "crates/lamina-client", version = "0.2.0" }
 clap = { version = "4.5", features = ["derive"] }

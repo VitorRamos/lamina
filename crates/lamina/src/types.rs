@@ -31,6 +31,7 @@ pub fn typecheck(file: &SourceFile, module: &Module) -> Result<()> {
 
     for item in &module.items {
         match item {
+            Item::Use(_) => {}
             Item::Arg(_) => {}
             Item::Const(c) => match check_expr(&c.value, &tenv, &fns, Some(&c.ty), &mut diags) {
                 Some(t) if t != c.ty => {
@@ -236,6 +237,10 @@ fn check_expr(
             Type::Stage
         }
         ExprKind::StageFromArg { .. } => Type::Stage,
+        ExprKind::MountCtor { kind, args } => {
+            check_mount_ctor(expr, kind, args, tenv, fns, diags)?;
+            Type::Mount
+        }
         ExprKind::Param { default, .. } => {
             if let Some(d) = default {
                 let _ = check_expr(d, tenv, fns, Some(&Type::String), diags);
@@ -308,6 +313,75 @@ fn check_expr(
     Some(t)
 }
 
+fn check_mount_ctor(
+    expr: &Expr,
+    kind: &str,
+    args: &[Expr],
+    tenv: &HashMap<String, Type>,
+    fns: &HashMap<String, FnSig>,
+    diags: &mut Vec<DiagnosticMsg>,
+) -> Option<()> {
+    match kind {
+        "cache" => {
+            // Mount.cache(target, id)
+            if args.len() != 2 {
+                diags.push(DiagnosticMsg::error(
+                    "Mount.cache(target, id) expects 2 args",
+                    Some(expr.span),
+                ));
+                return None;
+            }
+            expect_ty(&args[0], Type::String, tenv, fns, diags);
+            expect_ty(&args[1], Type::String, tenv, fns, diags);
+        }
+        "secret" => {
+            // Mount.secret(id, target)
+            if args.len() != 2 {
+                diags.push(DiagnosticMsg::error(
+                    "Mount.secret(id, target) expects 2 args",
+                    Some(expr.span),
+                ));
+                return None;
+            }
+            expect_ty(&args[0], Type::String, tenv, fns, diags);
+            expect_ty(&args[1], Type::String, tenv, fns, diags);
+        }
+        "ssh" => {
+            // Mount.ssh(target) or Mount.ssh(target, id)
+            if args.is_empty() || args.len() > 2 {
+                diags.push(DiagnosticMsg::error(
+                    "Mount.ssh(target[, id]) expects 1 or 2 args",
+                    Some(expr.span),
+                ));
+                return None;
+            }
+            for a in args {
+                expect_ty(a, Type::String, tenv, fns, diags);
+            }
+        }
+        "bind" => {
+            // Mount.bind(source, target)
+            if args.len() != 2 {
+                diags.push(DiagnosticMsg::error(
+                    "Mount.bind(source, target) expects 2 args",
+                    Some(expr.span),
+                ));
+                return None;
+            }
+            expect_ty(&args[0], Type::String, tenv, fns, diags);
+            expect_ty(&args[1], Type::String, tenv, fns, diags);
+        }
+        other => {
+            diags.push(DiagnosticMsg::error(
+                format!("unknown Mount constructor `{other}`"),
+                Some(expr.span),
+            ));
+            return None;
+        }
+    }
+    Some(())
+}
+
 fn check_method(
     expr: &Expr,
     recv: &Type,
@@ -325,13 +399,14 @@ fn check_method(
         return None;
     }
     let ok = match method {
-        "workdir" | "run" | "user" | "name" | "arg" => args.len() == 1,
-        "copy" => args.len() == 2,
+        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" => args.len() == 1,
+        "copy" | "label" => args.len() == 2,
         "copy_many" => args.len() == 2,
         "copy_from" => args.len() == 3,
         "env" | "arg_default" => args.len() == 2,
         "entrypoint" | "cmd" => args.len() == 1,
         "expose" => args.len() == 1,
+        "run_with" => args.len() == 2,
         _ => {
             diags.push(DiagnosticMsg::error(
                 format!("unknown Stage method `{method}`"),
@@ -348,10 +423,10 @@ fn check_method(
         return None;
     }
     match method {
-        "workdir" | "run" | "user" | "name" | "arg" => {
+        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" => {
             expect_ty(&args[0], Type::String, tenv, fns, diags);
         }
-        "copy" => {
+        "copy" | "label" => {
             expect_ty(&args[0], Type::String, tenv, fns, diags);
             expect_ty(&args[1], Type::String, tenv, fns, diags);
         }
@@ -385,6 +460,16 @@ fn check_method(
         }
         "expose" => {
             expect_ty(&args[0], Type::Int, tenv, fns, diags);
+        }
+        "run_with" => {
+            expect_ty(&args[0], Type::String, tenv, fns, diags);
+            expect_ty(
+                &args[1],
+                Type::List(Box::new(Type::Mount)),
+                tenv,
+                fns,
+                diags,
+            );
         }
         _ => {}
     }

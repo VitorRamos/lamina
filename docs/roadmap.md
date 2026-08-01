@@ -55,24 +55,29 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
 
 **Start here:** [#2](https://github.com/VitorRamos/lamina/issues/2) (only unblocked `agent-ready` issue at bootstrap).
 
-## Post-0.1 (queued, not agent-ready until 0.1 ships)
+## v0.2 — Composition
+
+| Issue | Theme | Status |
+|-------|--------|--------|
+| [#18](https://github.com/VitorRamos/lamina/issues/18) | Path imports / modules | shipped in v0.2 PR |
+| [#19](https://github.com/VitorRamos/lamina/issues/19) | Mounts / secrets / ssh / label / healthcheck | shipped |
+| [#20](https://github.com/VitorRamos/lamina/issues/20) | Stdlib recipes | shipped |
+| [#21](https://github.com/VitorRamos/lamina/issues/21) | `lamina fmt` | shipped |
+
+## Later
 
 | Theme | Notes |
 |-------|--------|
-| Path imports / modules | After 0.1 |
-| Mounts + secrets + ssh | After LLB + client |
-| Stdlib recipes | After modules + mounts |
-| Lint pack | After check pipeline |
-| `lamina fmt` | After parser |
-| Multi-platform | After mounts |
+| Lint pack | v0.3 |
+| Multi-platform | v0.3 |
 | Lossy emit-dockerfile | Optional debug only |
-| BuildKit gateway frontend | 1.x |
+| BuildKit gateway frontend | 1.x / post-1.0 |
 | Lockfile / remote modules | Open design |
 | LSP | After types + fmt |
 
 ## How agents should use this
 
-1. Filter: milestone **v0.1** + label **`agent-ready`**.  
+1. Filter open milestone + label **`agent-ready`**.  
 2. Skip issues whose **Depends on** are still open.  
-3. One issue per session/PR.  
-4. Do not pull Post-0.1 work into 0.1 PRs.  
+3. One issue per session/PR when possible; milestone-closing batches OK when requested.  
+4. Do not pull later-milestone work into earlier PRs.  

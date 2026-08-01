@@ -1,0 +1,30 @@
+// Stdlib: minimal Go image helpers (0.2).
+// Import with: use "std/golang.lam";
+
+/// Start from an official golang image.
+pub fn from_version(version: String) -> Stage {
+  Stage.from("golang:" + version)
+}
+
+/// Common workspace layout + module download.
+pub fn with_modules(s: Stage) -> Stage {
+  s.workdir("/src")
+    .copy("go.mod", "./")
+    .copy("go.sum", "./")
+    .run("go mod download")
+}
+
+/// Release build of the main package into /out/app.
+pub fn build_release(s: Stage) -> Stage {
+  s.copy(".", ".")
+    .run("CGO_ENABLED=0 go build -o /out/app ./")
+}
+
+/// Cache-friendly build using a cargo-style cache mount on /go/pkg.
+pub fn build_with_cache(s: Stage) -> Stage {
+  s.copy(".", ".")
+    .run_with(
+      "CGO_ENABLED=0 go build -o /out/app ./",
+      [Mount.cache("/go/pkg", "go-pkg")]
+    )
+}

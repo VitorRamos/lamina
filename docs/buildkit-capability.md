@@ -12,7 +12,9 @@
 | LLB op summary | `lamina emit-llb` | supported |
 | Solve via Buildx | `lamina build` → internal bridge → `docker buildx build` | supported (0.1 hybrid) |
 | Raw `pb.Definition` gRPC Solve | tonic client | deferred (post-0.1 refinement) |
-| Cache/secret/ssh mounts | | 0.2 |
+| Cache/secret/ssh/bind mounts | `Mount.*` + `.run_with` → Dockerfile `--mount` bridge | supported (0.2) |
+| LABEL / HEALTHCHECK | `.label` / `.healthcheck` | supported (0.2) |
+| Path modules + stdlib | `use` + `stdlib/` | supported (0.2) |
 | Frontend gateway for `.lam` | | post-1.0 |
 
 ## 0.1 solve bridge note

@@ -1,4 +1,4 @@
-//! AST for frozen MVP grammar.
+//! AST for Lamina (0.1 MVP + 0.2 modules / mounts).
 
 use crate::span::Span;
 
@@ -10,11 +10,19 @@ pub struct Module {
 
 #[derive(Debug, Clone)]
 pub enum Item {
+    Use(UseDecl),
     Arg(ArgDecl),
     Const(ConstDecl),
     Let(LetDecl),
     Fn(FnDecl),
     Target(TargetDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct UseDecl {
+    /// Path string as written: `"./lib.lam"` or `"std/golang.lam"`.
+    pub path: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +50,7 @@ pub struct LetDecl {
 
 #[derive(Debug, Clone)]
 pub struct FnDecl {
+    pub is_pub: bool,
     pub name: String,
     pub params: Vec<Param>,
     pub ret: Type,
@@ -69,6 +78,7 @@ pub enum Type {
     Int,
     Bool,
     Stage,
+    Mount,
     List(Box<Type>),
 }
 
@@ -79,6 +89,7 @@ impl Type {
             Type::Int => "Int".into(),
             Type::Bool => "Bool".into(),
             Type::Stage => "Stage".into(),
+            Type::Mount => "Mount".into(),
             Type::List(t) => format!("List[{}]", t.as_str()),
         }
     }
@@ -106,7 +117,6 @@ pub struct Expr {
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     String(String),
-    /// Interpolated string evaluated at compile time.
     StringInterp(Vec<InterpPart>),
     Int(i64),
     Bool(bool),
@@ -126,6 +136,11 @@ pub enum ExprKind {
     },
     StageFromArg {
         name: String,
+    },
+    /// `Mount.cache(...)` / `Mount.secret(...)` / `Mount.ssh(...)` / `Mount.bind(...)`
+    MountCtor {
+        kind: String,
+        args: Vec<Expr>,
     },
     Param {
         name: String,
