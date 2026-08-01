@@ -23,22 +23,48 @@ pub struct ModuleLoadContext {
 impl ModuleLoadContext {
     pub fn new(project_root: PathBuf) -> Self {
         let mut stdlib_paths = Vec::new();
+        let mut seen = HashSet::new();
+        let mut push = |p: PathBuf| {
+            if seen.insert(p.clone()) {
+                stdlib_paths.push(p);
+            }
+        };
+
+        // 1) Explicit override
         if let Ok(p) = std::env::var("LAMINA_STDLIB") {
-            stdlib_paths.push(PathBuf::from(p));
+            push(PathBuf::from(p));
         }
-        stdlib_paths.push(project_root.join("stdlib"));
-        if let Some(parent) = project_root.parent() {
-            stdlib_paths.push(parent.join("stdlib"));
+
+        // 2) Walk ancestors: examples/stdlib-go → … → repo root/stdlib
+        //    (CLI via cargo used CARGO_MANIFEST_DIR; LSP/editor does not.)
+        let mut cur = project_root.clone();
+        loop {
+            push(cur.join("stdlib"));
+            if !cur.pop() {
+                break;
+            }
         }
+
+        // 3) Dev: workspace crate path → repo root
         if let Ok(m) = std::env::var("CARGO_MANIFEST_DIR") {
             let crate_dir = PathBuf::from(m);
             if let Some(repo) = crate_dir.parent().and_then(|p| p.parent()) {
-                stdlib_paths.push(repo.join("stdlib"));
+                push(repo.join("stdlib"));
             }
         }
+
+        // Keep only paths that exist so error messages stay honest
+        // (still search non-existing last-resort via full list for first match).
+        // Prefer existing dirs first for speed/clarity.
+        let (existing, missing): (Vec<_>, Vec<_>) = stdlib_paths
+            .into_iter()
+            .partition(|p| p.is_dir());
+        let mut ordered = existing;
+        ordered.extend(missing);
+
         Self {
             project_root,
-            stdlib_paths,
+            stdlib_paths: ordered,
             offline: false,
             module_cache: None,
         }
@@ -342,6 +368,47 @@ mod tests {
     use std::io::Write;
     use std::process::Command;
     use tempfile::tempdir;
+
+    #[test]
+    fn stdlib_found_from_nested_example_project() {
+        // Mimic examples/stdlib-go layout without needing cargo env.
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        std::fs::create_dir_all(repo.join("stdlib")).unwrap();
+        std::fs::write(
+            repo.join("stdlib/golang.lam"),
+            r#"
+pub fn from_version(version: String) -> Stage {
+  Stage.from("golang:" + version)
+}
+"#,
+        )
+        .unwrap();
+        let proj = repo.join("examples/stdlib-go");
+        std::fs::create_dir_all(proj.join("src")).unwrap();
+        std::fs::write(
+            proj.join("src/image.lam"),
+            r#"
+use "std/golang.lam";
+pub target app = from_version("1.22-alpine").run("true").name("app");
+"#,
+        )
+        .unwrap();
+        let entry = proj.join("src/image.lam");
+        let src = std::fs::read_to_string(&entry).unwrap();
+        let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
+        let module = parse(&file).unwrap();
+        let ctx = ModuleLoadContext::new(proj);
+        let loaded = load_and_merge(&file, module, &ctx).unwrap();
+        assert!(
+            loaded
+                .module
+                .items
+                .iter()
+                .any(|i| matches!(i, Item::Fn(f) if f.name == "from_version")),
+            "stdlib from_version should resolve from ancestor stdlib/"
+        );
+    }
 
     #[test]
     fn load_path_module_pub_fn() {
