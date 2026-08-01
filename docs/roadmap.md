@@ -71,15 +71,20 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
 | [#22](https://github.com/VitorRamos/lamina/issues/22) | IR lint pack + `--deny` | shipped |
 | [#23](https://github.com/VitorRamos/lamina/issues/23) | Multi-platform / multi-arch | shipped |
 
-## Later
+## v1.0 — Stable
+
+| Issue | Theme | Status |
+|-------|--------|--------|
+| [#26](https://github.com/VitorRamos/lamina/issues/26) | Path lockfile | shipped |
+| [#24](https://github.com/VitorRamos/lamina/issues/24) | Lossy emit-dockerfile (debug) | shipped |
+
+## Post-1.0
 
 | Theme | Notes |
 |-------|--------|
-| Lossy emit-dockerfile | Optional debug only |
-| BuildKit gateway frontend | 1.x / post-1.0 |
-| Path lockfile | v1.0 |
-| Remote modules | Open design |
-| LSP | post-1.0 |
+| BuildKit gateway frontend | #25 |
+| Remote modules | #27 needs-design |
+| LSP | #28 |
 
 ## How agents should use this
 

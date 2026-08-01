@@ -1,9 +1,9 @@
 //! `lamina` CLI.
 
 use clap::{Parser, Subcommand};
-use lamina::compile::{compile_project, CompileOptions};
+use lamina::compile::{compile_project, write_lockfile, CompileOptions};
 use lamina::lint::LINT_IDS;
-use lamina_llb::{lower, summary};
+use lamina_llb::{lower, render_internal_dockerfile, summary};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -35,6 +35,9 @@ enum Commands {
         /// Print available lint ids
         #[arg(long)]
         list_lints: bool,
+        /// Require Lamina.lock and verify module hashes
+        #[arg(long)]
+        locked: bool,
     },
     /// Print solve_set / stage DAG summary.
     Explain {
@@ -82,6 +85,24 @@ enum Commands {
         push: bool,
         #[arg(long = "deny", value_name = "LINT")]
         deny: Vec<String>,
+        #[arg(long)]
+        locked: bool,
+    },
+    /// Write/update Lamina.lock for path/stdlib modules.
+    Lock {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+    /// Lossy Dockerfile dump for debugging only (NOT a product artifact).
+    EmitDockerfile {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        #[arg(long)]
+        target: Vec<String>,
+        #[arg(long = "param", value_name = "KEY=VALUE")]
+        params: Vec<String>,
+        #[arg(long = "build-arg", value_name = "KEY=VALUE")]
+        build_args: Vec<String>,
     },
     /// Format `.lam` sources (project entry or explicit files).
     Fmt {
@@ -109,6 +130,7 @@ fn run() -> miette::Result<()> {
             build_args,
             deny,
             list_lints,
+            locked,
         } => {
             if list_lints {
                 for id in LINT_IDS {
@@ -116,16 +138,18 @@ fn run() -> miette::Result<()> {
                 }
                 return Ok(());
             }
-            let opts = options(params, build_args, deny);
+            let mut opts = options(params, build_args, deny);
+            opts.locked = locked;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
             for f in &compiled.lint_findings {
                 eprintln!("warning: [{}] {}", f.id, f.message);
             }
             println!(
-                "ok: {} target(s) in {} ({} lint warning(s))",
+                "ok: {} target(s) in {} ({} lint warning(s), {} module(s))",
                 compiled.ir.targets.len(),
                 compiled.config.package.name,
-                compiled.lint_findings.len()
+                compiled.lint_findings.len(),
+                compiled.resolved_modules.len()
             );
         }
         Commands::Explain {
@@ -162,8 +186,10 @@ fn run() -> miette::Result<()> {
             platforms,
             push,
             deny,
+            locked,
         } => {
-            let opts = options(params, build_args, deny);
+            let mut opts = options(params, build_args, deny);
+            opts.locked = locked;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
             for f in &compiled.lint_findings {
                 eprintln!("warning: [{}] {}", f.id, f.message);
@@ -203,6 +229,26 @@ fn run() -> miette::Result<()> {
             );
             lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
             println!("built {}", tags.join(", "));
+        }
+        Commands::Lock { path } => {
+            let mut opts = options(vec![], vec![], vec![]);
+            opts.run_lints = false;
+            let lock_path = write_lockfile(&path, &opts).map_err(to_miette)?;
+            println!("wrote {}", lock_path.display());
+        }
+        Commands::EmitDockerfile {
+            path,
+            target,
+            params,
+            build_args,
+        } => {
+            eprintln!(
+                "warning: emit-dockerfile is a LOSSY debug export — not a product artifact; do not commit as source of truth"
+            );
+            let mut opts = options(params, build_args, vec![]);
+            opts.run_lints = false;
+            let compiled = compile_project(&path, &opts).map_err(to_miette)?;
+            print!("{}", render_internal_dockerfile(&compiled.ir, &target));
         }
         Commands::Fmt { paths, check } => {
             let mut files: Vec<PathBuf> = Vec::new();
@@ -283,6 +329,7 @@ fn options(params: Vec<String>, build_args: Vec<String>, deny: Vec<String>) -> C
         stdlib_paths: vec![],
         lint_deny,
         run_lints: true,
+        locked: false,
     }
 }
 

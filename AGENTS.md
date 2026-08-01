@@ -155,7 +155,7 @@ Before BuildKit exists, unit + golden tests are enough for language/IR/LLB-summa
 | **v1.0 — Stable** | Path lockfile, docs, stability | Tagged 1.0 |
 | **Post-1.0** | Frontend gateway, remote modules, optional emit-dockerfile, LSP | Not blocking 1.0 |
 
-Full issue DAG: [`docs/roadmap.md`](docs/roadmap.md). Epic [#1](https://github.com/VitorRamos/lamina/issues/1); implement **#2 → #17** for 0.1.
+Full issue DAG: [`docs/roadmap.md`](docs/roadmap.md). **v0.1–v1.0 milestones are shipped**; open work is Post-1.0 (gateway, remote modules, LSP).
 
 ---
 

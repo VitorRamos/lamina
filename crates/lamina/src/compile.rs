@@ -5,6 +5,7 @@ use crate::diag::Result;
 use crate::eval::{evaluate, EvalCaps, EvalInput};
 use crate::ir::ModuleIr;
 use crate::lint::{lint_ir, LintFinding, LintOptions};
+use crate::lock::{LaminaLock, ResolvedModule, LOCK_FILE_NAME};
 use crate::modules::{load_and_merge, ModuleLoadContext};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
@@ -17,12 +18,11 @@ pub struct CompileOptions {
     pub params: HashMap<String, String>,
     pub build_args: HashMap<String, String>,
     pub targets: Vec<String>,
-    /// Extra stdlib search paths (prepended).
     pub stdlib_paths: Vec<PathBuf>,
-    /// Lint deny list (CLI `--deny` merged with Lamina.toml).
     pub lint_deny: Vec<String>,
-    /// Run lints after IR (default true for project compile).
     pub run_lints: bool,
+    /// Require Lamina.lock and verify hashes.
+    pub locked: bool,
 }
 
 pub struct Compiled {
@@ -31,6 +31,7 @@ pub struct Compiled {
     pub config: LaminaToml,
     pub root: PathBuf,
     pub lint_findings: Vec<LintFinding>,
+    pub resolved_modules: Vec<ResolvedModule>,
 }
 
 pub fn compile_source(
@@ -56,7 +57,33 @@ pub fn compile_source_in(
     for p in opts.stdlib_paths.iter().rev() {
         ctx.stdlib_paths.insert(0, p.clone());
     }
-    let module = load_and_merge(&file, module, &ctx)?;
+    let loaded = load_and_merge(&file, module, &ctx)?;
+    let module = loaded.module;
+    let resolved_modules = loaded.resolved;
+
+    if opts.locked {
+        let lock_path = project_root.join(LOCK_FILE_NAME);
+        if !lock_path.is_file() {
+            return Err(crate::diag::CompileError::single(
+                None,
+                crate::diag::DiagnosticMsg::error(
+                    format!("--locked requires {LOCK_FILE_NAME} (run `lamina lock`)"),
+                    None,
+                ),
+            ));
+        }
+        let lock = LaminaLock::load(&lock_path).map_err(|e| {
+            crate::diag::CompileError::single(
+                None,
+                crate::diag::DiagnosticMsg::error(format!("read {LOCK_FILE_NAME}: {e}"), None),
+            )
+        })?;
+        lock.verify(&resolved_modules, project_root)?;
+    } else {
+        // Soft check: warn via... we don't have warn channel; skip unless lock exists and mismatch?
+        // Optional: if lock present, verify strictly only with --locked. Document that.
+    }
+
     typecheck(&file, &module)?;
 
     let mut params = config.params.clone();
@@ -88,6 +115,7 @@ pub fn compile_source_in(
         config,
         root: project_root.to_path_buf(),
         lint_findings,
+        resolved_modules,
     })
 }
 
@@ -110,6 +138,23 @@ pub fn compile_project(root: &Path, opts: &CompileOptions) -> Result<Compiled> {
         )
     })?;
     compile_source_in(entry.to_string_lossy().as_ref(), &src, config, opts, root)
+}
+
+/// Write `Lamina.lock` for the project based on current `use` graph.
+pub fn write_lockfile(root: &Path, opts: &CompileOptions) -> Result<PathBuf> {
+    let mut opts = opts.clone();
+    opts.locked = false;
+    opts.run_lints = false;
+    let compiled = compile_project(root, &opts)?;
+    let lock = LaminaLock::from_resolved(&compiled.resolved_modules, root);
+    let path = root.join(LOCK_FILE_NAME);
+    lock.save(&path).map_err(|e| {
+        crate::diag::CompileError::single(
+            None,
+            crate::diag::DiagnosticMsg::error(format!("write {LOCK_FILE_NAME}: {e}"), None),
+        )
+    })?;
+    Ok(path)
 }
 
 pub fn explain(compiled: &Compiled, targets: &[String]) -> String {

@@ -2,6 +2,7 @@
 
 use crate::ast::{FnDecl, Item, Module};
 use crate::diag::{CompileError, DiagnosticMsg, Result};
+use crate::lock::{hash_file, ResolvedModule};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
 use std::collections::{HashMap, HashSet};
@@ -26,7 +27,6 @@ impl ModuleLoadContext {
         }
         if let Ok(m) = std::env::var("CARGO_MANIFEST_DIR") {
             let crate_dir = PathBuf::from(m);
-            // crates/lamina → repo root
             if let Some(repo) = crate_dir.parent().and_then(|p| p.parent()) {
                 stdlib_paths.push(repo.join("stdlib"));
             }
@@ -38,14 +38,21 @@ impl ModuleLoadContext {
     }
 }
 
+pub struct LoadResult {
+    pub module: Module,
+    /// Deduped resolved modules (for lockfile).
+    pub resolved: Vec<ResolvedModule>,
+}
+
 /// Expand `use` items: load path modules and merge exported `pub fn` into the entry module.
 pub fn load_and_merge(
     entry: &SourceFile,
     module: Module,
     ctx: &ModuleLoadContext,
-) -> Result<Module> {
+) -> Result<LoadResult> {
     let mut visiting = HashSet::new();
     let mut cache: HashMap<PathBuf, Vec<FnDecl>> = HashMap::new();
+    let mut resolved_map: HashMap<String, ResolvedModule> = HashMap::new();
     let mut next_file_id = entry.id.0 + 1;
 
     let entry_path = PathBuf::from(&entry.name);
@@ -54,25 +61,34 @@ pub fn load_and_merge(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| ctx.project_root.clone());
 
-    expand_uses(
-        entry,
-        module,
-        &entry_dir,
+    let mut state = ExpandState {
         ctx,
-        &mut visiting,
-        &mut cache,
-        &mut next_file_id,
-    )
+        visiting: &mut visiting,
+        cache: &mut cache,
+        resolved_map: &mut resolved_map,
+        next_file_id: &mut next_file_id,
+    };
+    let module = expand_uses(entry, module, &entry_dir, &mut state)?;
+
+    let mut resolved: Vec<ResolvedModule> = resolved_map.into_values().collect();
+    resolved.sort_by(|a, b| a.spec.cmp(&b.spec));
+
+    Ok(LoadResult { module, resolved })
+}
+
+struct ExpandState<'a> {
+    ctx: &'a ModuleLoadContext,
+    visiting: &'a mut HashSet<PathBuf>,
+    cache: &'a mut HashMap<PathBuf, Vec<FnDecl>>,
+    resolved_map: &'a mut HashMap<String, ResolvedModule>,
+    next_file_id: &'a mut u32,
 }
 
 fn expand_uses(
     file: &SourceFile,
     module: Module,
     from_dir: &Path,
-    ctx: &ModuleLoadContext,
-    visiting: &mut HashSet<PathBuf>,
-    cache: &mut HashMap<PathBuf, Vec<FnDecl>>,
-    next_file_id: &mut u32,
+    state: &mut ExpandState<'_>,
 ) -> Result<Module> {
     let mut merged_fns: Vec<FnDecl> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -87,10 +103,11 @@ fn expand_uses(
     for item in module.items {
         match item {
             Item::Use(u) => {
-                let path = resolve_use_path(&u.path, from_dir, ctx).map_err(|msg| {
+                let path = resolve_use_path(&u.path, from_dir, state.ctx).map_err(|msg| {
                     CompileError::single(Some(file), DiagnosticMsg::error(msg, Some(u.span)))
                 })?;
-                let exports = load_exports(&path, ctx, visiting, cache, next_file_id)?;
+                record_resolved(&u.path, &path, state.resolved_map)?;
+                let exports = load_exports(&path, state)?;
                 for f in exports {
                     if !seen.insert(f.name.clone()) {
                         return Err(CompileError::single(
@@ -120,18 +137,37 @@ fn expand_uses(
     })
 }
 
-fn load_exports(
+fn record_resolved(
+    spec: &str,
     path: &Path,
-    ctx: &ModuleLoadContext,
-    visiting: &mut HashSet<PathBuf>,
-    cache: &mut HashMap<PathBuf, Vec<FnDecl>>,
-    next_file_id: &mut u32,
-) -> Result<Vec<FnDecl>> {
+    resolved_map: &mut HashMap<String, ResolvedModule>,
+) -> Result<()> {
+    if resolved_map.contains_key(spec) {
+        return Ok(());
+    }
+    let sha256 = hash_file(path).map_err(|e| {
+        CompileError::single(
+            None,
+            DiagnosticMsg::error(format!("hash {}: {e}", path.display()), None),
+        )
+    })?;
+    resolved_map.insert(
+        spec.to_string(),
+        ResolvedModule {
+            spec: spec.to_string(),
+            path: path.to_path_buf(),
+            sha256,
+        },
+    );
+    Ok(())
+}
+
+fn load_exports(path: &Path, state: &mut ExpandState<'_>) -> Result<Vec<FnDecl>> {
     let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Some(v) = cache.get(&key) {
+    if let Some(v) = state.cache.get(&key) {
         return Ok(v.clone());
     }
-    if !visiting.insert(key.clone()) {
+    if !state.visiting.insert(key.clone()) {
         return Err(CompileError::single(
             None,
             DiagnosticMsg::error(format!("cyclic module import: {}", path.display()), None),
@@ -147,31 +183,25 @@ fn load_exports(
             ),
         )
     })?;
-    let file = SourceFile::new(FileId(*next_file_id), path.display().to_string(), src);
-    *next_file_id += 1;
+    let file = SourceFile::new(FileId(*state.next_file_id), path.display().to_string(), src);
+    *state.next_file_id += 1;
     let parsed = parse(&file)?;
     let dir = path
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    // Expand nested uses so transitive pub fns surface when re-exported...
-    // Path modules only export their own pub fns; nested uses make those fns available
-    // inside the module for defining pub fns, and also re-export nested pub fns.
-    let expanded = expand_uses(&file, parsed, &dir, ctx, visiting, cache, next_file_id)?;
+    let expanded = expand_uses(&file, parsed, &dir, state)?;
     let mut exports = Vec::new();
     for item in &expanded.items {
         if let Item::Fn(f) = item {
-            // Imported fns were added as Item::Fn without is_pub maybe true from source.
-            // Re-export: only original pub fns of this file OR imported ones?
-            // Policy: transitive re-export of everything visible after expand (all pub).
             if f.is_pub {
                 exports.push(f.clone());
             }
         }
     }
 
-    visiting.remove(&key);
-    cache.insert(key, exports.clone());
+    state.visiting.remove(&key);
+    state.cache.insert(key, exports.clone());
     Ok(exports)
 }
 
@@ -285,8 +315,9 @@ pub target app = tag(Stage.from("alpine:3.19"), "app");
         let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
         let module = parse(&file).unwrap();
         let ctx = ModuleLoadContext::new(root.to_path_buf());
-        let merged = load_and_merge(&file, module, &ctx).unwrap();
-        let names: Vec<_> = merged
+        let loaded = load_and_merge(&file, module, &ctx).unwrap();
+        let names: Vec<_> = loaded
+            .module
             .items
             .iter()
             .filter_map(|i| match i {
@@ -296,5 +327,7 @@ pub target app = tag(Stage.from("alpine:3.19"), "app");
             .collect();
         assert!(names.contains(&"tag"));
         assert!(!names.contains(&"hidden"));
+        assert_eq!(loaded.resolved.len(), 1);
+        assert_eq!(loaded.resolved[0].spec, "./lib.lam");
     }
 }

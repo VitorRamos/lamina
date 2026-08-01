@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0 — 2026-08-01
+
+### Added
+
+- Path module lockfile: `Lamina.lock` via `lamina lock`, verify with `--locked`
+- `lamina emit-dockerfile` — **lossy debug export only** (warned; not product)
+- User guide: `docs/USER_GUIDE.md`
+- Example lock committed for `examples/compose-demo`
+
+### Stability
+
+- Language surface through 0.3 (modules, mounts, lints, platforms) is 1.0
+- Remote modules / registry remain post-1.0
+
 ## 0.3.0 — 2026-08-01
 
 ### Added
