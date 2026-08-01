@@ -61,17 +61,47 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> std::result::Result<Item, DiagnosticMsg> {
-        match self.peek().kind {
+        match &self.peek().kind {
+            TokenKind::Use => Ok(Item::Use(self.parse_use()?)),
             TokenKind::Arg => Ok(Item::Arg(self.parse_arg()?)),
             TokenKind::Const => Ok(Item::Const(self.parse_const()?)),
             TokenKind::Let => Ok(Item::Let(self.parse_let()?)),
-            TokenKind::Fn => Ok(Item::Fn(self.parse_fn()?)),
-            TokenKind::Pub => Ok(Item::Target(self.parse_target()?)),
+            TokenKind::Fn => Ok(Item::Fn(self.parse_fn(false)?)),
+            TokenKind::Pub => {
+                let start = self.bump().span;
+                match self.peek().kind {
+                    TokenKind::Target => Ok(Item::Target(self.parse_target_after_pub(start)?)),
+                    TokenKind::Fn => Ok(Item::Fn(self.parse_fn(true)?)),
+                    _ => Err(DiagnosticMsg::error(
+                        "expected `target` or `fn` after `pub`",
+                        Some(self.peek().span),
+                    )),
+                }
+            }
             _ => Err(DiagnosticMsg::error(
-                "expected item (arg, const, let, fn, pub target)",
+                "expected item (use, arg, const, let, fn, pub fn, pub target)",
                 Some(self.peek().span),
             )),
         }
+    }
+
+    fn parse_use(&mut self) -> std::result::Result<UseDecl, DiagnosticMsg> {
+        let start = self.expect_punct(TokenKind::Use)?.span;
+        let path_tok = self.bump();
+        let path = match path_tok.kind {
+            TokenKind::String(s) => s,
+            _ => {
+                return Err(DiagnosticMsg::error(
+                    "use path must be a string literal",
+                    Some(path_tok.span),
+                ))
+            }
+        };
+        let end = self.expect_punct(TokenKind::Semicolon)?.span;
+        Ok(UseDecl {
+            path,
+            span: start.merge(end),
+        })
     }
 
     fn parse_arg(&mut self) -> std::result::Result<ArgDecl, DiagnosticMsg> {
@@ -145,7 +175,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_fn(&mut self) -> std::result::Result<FnDecl, DiagnosticMsg> {
+    fn parse_fn(&mut self, is_pub: bool) -> std::result::Result<FnDecl, DiagnosticMsg> {
         let start = self.expect_punct(TokenKind::Fn)?.span;
         let name = self.expect_ident()?;
         self.expect_punct(TokenKind::LParen)?;
@@ -168,6 +198,7 @@ impl<'a> Parser<'a> {
         let ret = self.parse_type()?;
         let body = self.parse_block()?;
         Ok(FnDecl {
+            is_pub,
             name,
             params,
             ret,
@@ -188,8 +219,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_target(&mut self) -> std::result::Result<TargetDecl, DiagnosticMsg> {
-        let start = self.expect_punct(TokenKind::Pub)?.span;
+    fn parse_target_after_pub(
+        &mut self,
+        pub_span: crate::span::Span,
+    ) -> std::result::Result<TargetDecl, DiagnosticMsg> {
         self.expect_punct(TokenKind::Target)?;
         let name = self.expect_ident()?;
         self.expect_punct(TokenKind::Eq)?;
@@ -198,7 +231,7 @@ impl<'a> Parser<'a> {
         Ok(TargetDecl {
             name,
             value,
-            span: start.merge(end),
+            span: pub_span.merge(end),
         })
     }
 
@@ -209,6 +242,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(ref s) if s == "Int" => Ok(Type::Int),
             TokenKind::Ident(ref s) if s == "Bool" => Ok(Type::Bool),
             TokenKind::Ident(ref s) if s == "Stage" => Ok(Type::Stage),
+            TokenKind::Ident(ref s) if s == "Mount" => Ok(Type::Mount),
             TokenKind::Ident(ref s) if s == "List" => {
                 self.expect_punct(TokenKind::LBracket)?;
                 let inner = self.parse_type()?;
@@ -475,6 +509,18 @@ impl<'a> Parser<'a> {
                         Some(start),
                     )),
                 }
+            }
+            TokenKind::Ident(ref name) if name == "Mount" => {
+                let start = self.bump().span;
+                self.expect_punct(TokenKind::Dot)?;
+                let kind = self.expect_ident()?;
+                self.expect_punct(TokenKind::LParen)?;
+                let args = self.parse_arg_list()?;
+                let end = self.expect_punct(TokenKind::RParen)?.span;
+                Ok(Expr {
+                    span: start.merge(end),
+                    kind: ExprKind::MountCtor { kind, args },
+                })
             }
             TokenKind::Ident(ref name) if name == "param" => {
                 let start = self.bump().span;

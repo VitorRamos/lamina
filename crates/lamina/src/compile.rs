@@ -1,27 +1,30 @@
-//! High-level compile pipeline: source → typed → ModuleIr.
+//! High-level compile pipeline: source → modules → typed → ModuleIr.
 
 use crate::config::LaminaToml;
 use crate::diag::Result;
 use crate::eval::{evaluate, EvalCaps, EvalInput};
 use crate::ir::ModuleIr;
+use crate::modules::{load_and_merge, ModuleLoadContext};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
 use crate::types::typecheck;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default)]
 pub struct CompileOptions {
     pub params: HashMap<String, String>,
     pub build_args: HashMap<String, String>,
     pub targets: Vec<String>,
+    /// Extra stdlib search paths (prepended).
+    pub stdlib_paths: Vec<PathBuf>,
 }
 
 pub struct Compiled {
     pub file: SourceFile,
     pub ir: ModuleIr,
     pub config: LaminaToml,
-    pub root: std::path::PathBuf,
+    pub root: PathBuf,
 }
 
 pub fn compile_source(
@@ -30,8 +33,24 @@ pub fn compile_source(
     config: LaminaToml,
     opts: &CompileOptions,
 ) -> Result<Compiled> {
+    let root = PathBuf::from(".");
+    compile_source_in(name, src, config, opts, &root)
+}
+
+pub fn compile_source_in(
+    name: &str,
+    src: &str,
+    config: LaminaToml,
+    opts: &CompileOptions,
+    project_root: &Path,
+) -> Result<Compiled> {
     let file = SourceFile::new(FileId(0), name, src);
     let module = parse(&file)?;
+    let mut ctx = ModuleLoadContext::new(project_root.to_path_buf());
+    for p in opts.stdlib_paths.iter().rev() {
+        ctx.stdlib_paths.insert(0, p.clone());
+    }
+    let module = load_and_merge(&file, module, &ctx)?;
     typecheck(&file, &module)?;
 
     let mut params = config.params.clone();
@@ -52,7 +71,7 @@ pub fn compile_source(
         file,
         ir,
         config,
-        root: Path::new(".").to_path_buf(),
+        root: project_root.to_path_buf(),
     })
 }
 
@@ -74,9 +93,7 @@ pub fn compile_project(root: &Path, opts: &CompileOptions) -> Result<Compiled> {
             ),
         )
     })?;
-    let mut compiled = compile_source(entry.to_string_lossy().as_ref(), &src, config, opts)?;
-    compiled.root = root.to_path_buf();
-    Ok(compiled)
+    compile_source_in(entry.to_string_lossy().as_ref(), &src, config, opts, root)
 }
 
 pub fn explain(compiled: &Compiled, targets: &[String]) -> String {

@@ -1,0 +1,4 @@
+use "std/golang.lam";
+
+// Smoke: resolve + typecheck stdlib helpers.
+pub target app = from_version("1.22-alpine").run("true").name("app");

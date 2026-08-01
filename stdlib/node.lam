@@ -1,0 +1,20 @@
+// Stdlib: minimal Node image helpers (0.2).
+// Import with: use "std/node.lam";
+
+pub fn from_version(version: String) -> Stage {
+  Stage.from("node:" + version)
+}
+
+pub fn npm_ci(s: Stage) -> Stage {
+  s.workdir("/app")
+    .copy("package.json", "./")
+    .copy("package-lock.json", "./")
+    .run("npm ci")
+}
+
+pub fn npm_ci_with_cache(s: Stage) -> Stage {
+  s.workdir("/app")
+    .copy("package.json", "./")
+    .copy("package-lock.json", "./")
+    .run_with("npm ci", [Mount.cache("/root/.npm", "npm-cache")])
+}

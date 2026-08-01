@@ -1,0 +1,3 @@
+[package]
+name = "stdlib-go"
+entry = "src/image.lam"

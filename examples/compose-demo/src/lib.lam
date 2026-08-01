@@ -1,0 +1,3 @@
+pub fn alpine_labeled(label: String) -> Stage {
+  Stage.from("alpine:3.19").label("app", label).run("true").name("runtime")
+}

@@ -65,6 +65,34 @@ pub enum Instr {
     Cmd(Vec<String>),
     Expose(i64),
     Name(String),
+    Label {
+        key: String,
+        value: String,
+    },
+    Healthcheck(String),
+    /// RUN with BuildKit mounts (cache/secret/ssh/bind).
+    RunWith {
+        cmd: String,
+        mounts: Vec<MountSpec>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MountKind {
+    Cache,
+    Secret,
+    Ssh,
+    Bind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MountSpec {
+    pub kind: MountKind,
+    /// cache id / secret id / ssh id (optional empty)
+    pub id: String,
+    pub target: String,
+    /// bind source path (host/context); empty for non-bind
+    pub source: String,
 }
 
 impl ModuleIr {
@@ -140,6 +168,9 @@ fn instr_summary(i: &Instr) -> String {
         Instr::Cmd(a) => format!("cmd {a:?}"),
         Instr::Expose(p) => format!("expose {p}"),
         Instr::Name(n) => format!("name {n}"),
+        Instr::Label { key, value } => format!("label {key}={value}"),
+        Instr::Healthcheck(c) => format!("healthcheck {c}"),
+        Instr::RunWith { cmd, mounts } => format!("run_with mounts={} cmd={cmd}", mounts.len()),
     }
 }
 
