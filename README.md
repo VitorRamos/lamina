@@ -10,7 +10,7 @@
 
 ## Status
 
-**1.0.0** — path modules, mounts, lints, multi-platform, lockfile.
+**1.3.0** — path modules, mounts, lints, multi-platform, lockfile, git remotes, LSP, assignment.
 
 - User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
 - Architecture: [`docs/design.md`](docs/design.md)
@@ -40,7 +40,7 @@ cargo test --workspace
 
 **CI:** every PR and push to `main` must stay green (fmt, clippy, tests, example `lamina check`). See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Release notes: [`docs/RELEASE.md`](docs/RELEASE.md).
 
-## CLI (1.0)
+## CLI
 
 ```text
 lamina check [PATH] [--deny LINT|all] [--locked] [--list-lints]

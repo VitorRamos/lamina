@@ -1,10 +1,27 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-08-02
+
+### Added
+
+- **Assignment** in blocks: `name = expr;` (accumulate `Stage` across `for` loops)
+- **`for` / `if` as statements** may omit trailing `;`
+- Example **`examples/kitchen-sink`**: language tour multi-stage Go service
+- CI: fmt, clippy, test, example `lamina check` on every PR / `main`
+- Major-only GitHub Release workflow (`v*.0.0`) + `docs/RELEASE.md`
+- Dual license files (`LICENSE-MIT`, `LICENSE-APACHE`)
+
+### Fixed
+
+- `lamina build` streams Buildx progress (no buffered output)
+- Internal Dockerfile bridge quotes `ENV`/`LABEL` values with spaces
+- `Stage.arg` parses (keywords allowed as method names after `.`)
+- Secret/SSH mounts emit `required=false` so demos solve without credentials
+- `lamina fmt`: dense `use`/`const`/`let` grouping (hand-written style); method chains still break
 
 ### Changed
 
-- Renamed crates.io library package **`lamina` → `lamina-lang`** (name taken on crates.io).
+- Crates.io library package renamed **`lamina` → `lamina-lang`** (name taken on crates.io).
   Path: `crates/lamina-lang`. Rust imports: `lamina_lang::…`.
   CLI binary remains **`lamina`** (`lamina-cli`).
 
