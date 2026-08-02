@@ -61,8 +61,11 @@ cargo run -p lamina-cli -- build examples/platform-demo --target app -t platform
 
 ```text
 crates/
-  lamina/       # language library
+  lamina-lang/  # language library (crates.io; was name-squatted as `lamina`)
   lamina-cli/   # binary: lamina
+  lamina-llb/
+  lamina-client/
+  lamina-lsp/
 docs/
   design.md
   roadmap.md

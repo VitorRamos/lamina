@@ -1,13 +1,13 @@
 //! Analyze a buffer with the Lamina compiler for LSP features.
 
 use crate::position::{span_to_range, word_at_offset};
-use lamina::ast::{Item, Module, Type};
-use lamina::config::LaminaToml;
-use lamina::diag::{CompileError, Severity};
-use lamina::modules::{load_and_merge, ModuleLoadContext};
-use lamina::parser::parse;
-use lamina::span::{FileId, SourceFile};
-use lamina::types::typecheck;
+use lamina_lang::ast::{Item, Module, Type};
+use lamina_lang::config::LaminaToml;
+use lamina_lang::diag::{CompileError, Severity};
+use lamina_lang::modules::{load_and_merge, ModuleLoadContext};
+use lamina_lang::parser::parse;
+use lamina_lang::span::{FileId, SourceFile};
+use lamina_lang::types::typecheck;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tower_lsp::lsp_types::{
@@ -100,7 +100,7 @@ pub fn analyze(path: &Path, source: &str) -> Analysis {
 }
 
 fn index_imported_modules(
-    resolved: &[lamina::lock::ResolvedModule],
+    resolved: &[lamina_lang::lock::ResolvedModule],
     analysis: &mut Analysis,
 ) {
     for rm in resolved {
@@ -134,7 +134,7 @@ fn index_imported_modules(
     }
 }
 
-fn format_fn_sig(f: &lamina::ast::FnDecl) -> String {
+fn format_fn_sig(f: &lamina_lang::ast::FnDecl) -> String {
     let params: Vec<String> = f
         .params
         .iter()

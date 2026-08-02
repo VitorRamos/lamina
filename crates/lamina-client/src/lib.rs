@@ -3,7 +3,7 @@
 //! Uses an **internal** ephemeral Dockerfile fed only to `docker buildx build`
 //! so stock Docker/Buildx works without a custom gateway frontend.
 
-use lamina::ir::ModuleIr;
+use lamina_lang::ir::ModuleIr;
 use lamina_llb::{lower, render_internal_dockerfile, summary};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

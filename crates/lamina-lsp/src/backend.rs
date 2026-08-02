@@ -44,7 +44,7 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "lamina-lsp".into(),
-                version: Some(lamina::VERSION.into()),
+                version: Some(lamina_lang::VERSION.into()),
             }),
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -170,7 +170,7 @@ impl LanguageServer for Backend {
         let path = uri
             .to_file_path()
             .unwrap_or_else(|_| PathBuf::from("buffer.lam"));
-        match lamina::fmt::format_source(path.to_string_lossy().as_ref(), text) {
+        match lamina_lang::fmt::format_source(path.to_string_lossy().as_ref(), text) {
             Ok(formatted) if formatted != *text => {
                 let end = crate::position::offset_to_position(text, text.len());
                 Ok(Some(vec![TextEdit {

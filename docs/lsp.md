@@ -10,7 +10,7 @@
 | Hover | Symbols, Stage/Mount intrinsics |
 | Goto definition | Local `fn` / `const` / `let` / `target`; path `use` files |
 | Completion | Stage methods after `.` |
-| Format | Uses `lamina::fmt` |
+| Format | Uses `lamina_lang::fmt` |
 
 Remote `git+` modules: offline only in the LSP (uses warm module cache). Unresolved remotes surface as diagnostics.
 

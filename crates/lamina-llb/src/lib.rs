@@ -4,7 +4,7 @@
 //! Dockerfile-less path in `lamina-client` using `docker buildx` + BuildKit
 //! gateway when available. This crate owns graph construction + goldens.
 
-use lamina::ir::{Instr, ModuleIr, MountKind, MountSpec, StageBase, StageId};
+use lamina_lang::ir::{Instr, ModuleIr, MountKind, MountSpec, StageBase, StageId};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -447,8 +447,8 @@ fn dockerfile_kv(key: &str, value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lamina::compile::{compile_source, CompileOptions};
-    use lamina::config::LaminaToml;
+    use lamina_lang::compile::{compile_source, CompileOptions};
+    use lamina_lang::config::LaminaToml;
 
     #[test]
     fn lower_copy_from_summary() {

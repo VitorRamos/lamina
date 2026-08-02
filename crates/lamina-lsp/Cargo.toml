@@ -13,7 +13,7 @@ name = "lamina-lsp"
 path = "src/main.rs"
 
 [dependencies]
-lamina = { workspace = true }
+lamina-lang = { workspace = true }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"

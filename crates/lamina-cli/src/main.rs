@@ -1,8 +1,8 @@
 //! `lamina` CLI.
 
 use clap::{Parser, Subcommand};
-use lamina::compile::{compile_project, write_lockfile, CompileOptions};
-use lamina::lint::LINT_IDS;
+use lamina_lang::compile::{compile_project, write_lockfile, CompileOptions};
+use lamina_lang::lint::LINT_IDS;
 use lamina_llb::{lower, render_internal_dockerfile, summary};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use std::process::ExitCode;
 #[derive(Debug, Parser)]
 #[command(
     name = "lamina",
-    version = lamina::VERSION,
+    version = lamina_lang::VERSION,
     about = "Lamina: typed language for container images (BuildKit LLB → OCI)"
 )]
 struct Cli {
@@ -258,7 +258,7 @@ fn run() -> miette::Result<()> {
                 if p.is_dir() {
                     let cfg = p.join("Lamina.toml");
                     let entry = if cfg.exists() {
-                        lamina::config::LaminaToml::load(&cfg)
+                        lamina_lang::config::LaminaToml::load(&cfg)
                             .map(|c| c.entry_path(&p))
                             .unwrap_or_else(|_| p.join("src/image.lam"))
                     } else {
@@ -291,7 +291,7 @@ fn run() -> miette::Result<()> {
             for f in files {
                 let src = std::fs::read_to_string(&f)
                     .map_err(|e| miette::miette!("read {}: {e}", f.display()))?;
-                let formatted = lamina::fmt::format_source(f.to_string_lossy().as_ref(), &src)
+                let formatted = lamina_lang::fmt::format_source(f.to_string_lossy().as_ref(), &src)
                     .map_err(to_miette)?;
                 if formatted != src {
                     if check {
@@ -351,6 +351,6 @@ fn parse_kv(items: Vec<String>) -> HashMap<String, String> {
     m
 }
 
-fn to_miette(e: lamina::diag::CompileError) -> miette::Error {
+fn to_miette(e: lamina_lang::diag::CompileError) -> miette::Error {
     miette::Error::new(e)
 }

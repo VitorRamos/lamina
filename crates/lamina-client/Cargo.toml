@@ -8,7 +8,7 @@ rust-version.workspace = true
 description = "BuildKit / docker buildx solve client for Lamina"
 
 [dependencies]
-lamina = { workspace = true }
+lamina-lang = { workspace = true }
 lamina-llb = { workspace = true }
 thiserror = "2"
 tempfile = "3"
