@@ -1,8 +1,11 @@
 //! Pretty-printer for Lamina sources (`lamina fmt`).
 //!
-//! Method chains (`.run().name()…`) are broken across lines. Leading `//`
-//! comments before each top-level item are preserved from the original source
-//! (the parser does not keep comments in the AST).
+//! Style (matches hand-written examples like hello-static / kitchen-sink):
+//! - Method chains break one `.method()` per line.
+//! - Dense runs of the same item kind (`use`, `const`, `let`, …).
+//! - Blank line between different kinds / before `fn` and `target`.
+//! - Leading `//` comments preserved; file header gets a blank after comments,
+//!   section comments sit directly above the following item.
 
 use crate::ast::*;
 use crate::diag::Result;
@@ -20,28 +23,64 @@ pub fn format_module(module: &Module) -> String {
     format_module_preserving_comments(module, "")
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ItemKind {
+    Use,
+    Arg,
+    Const,
+    Let,
+    Fn,
+    Target,
+}
+
+fn item_kind(item: &Item) -> ItemKind {
+    match item {
+        Item::Use(_) => ItemKind::Use,
+        Item::Arg(_) => ItemKind::Arg,
+        Item::Const(_) => ItemKind::Const,
+        Item::Let(_) => ItemKind::Let,
+        Item::Fn(_) => ItemKind::Fn,
+        Item::Target(_) => ItemKind::Target,
+    }
+}
+
 fn format_module_preserving_comments(module: &Module, src: &str) -> String {
     let mut out = String::new();
     let mut prev_end: usize = 0;
+    let mut prev_kind: Option<ItemKind> = None;
     for (i, item) in module.items.iter().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
+        let kind = item_kind(item);
         let item_start = item_span(item).start as usize;
-        if !src.is_empty() && item_start >= prev_end {
-            let trivia = leading_line_comments(src, prev_end, item_start);
-            if !trivia.is_empty() {
-                out.push_str(&trivia);
-                if !trivia.ends_with('\n') {
-                    out.push('\n');
-                }
-                // blank line between comment block and item (matches hand style)
+        let trivia = if !src.is_empty() && item_start >= prev_end {
+            leading_line_comments(src, prev_end, item_start)
+        } else {
+            String::new()
+        };
+        let has_comments = !trivia.is_empty();
+
+        if i > 0 {
+            // Section break: different kind, or a comment introduces a new section.
+            let section_break = has_comments || prev_kind != Some(kind);
+            if section_break {
+                out.push('\n'); // extra blank (previous item already ended with \n)
+            }
+        }
+
+        if has_comments {
+            out.push_str(&trivia);
+            if !trivia.ends_with('\n') {
+                out.push('\n');
+            }
+            // File header: blank line after the banner comments before the first item.
+            if i == 0 {
                 out.push('\n');
             }
         }
+
         format_item(&mut out, item);
         out.push('\n');
         prev_end = item_span(item).end as usize;
+        prev_kind = Some(kind);
     }
     // Trailing file comments after last item
     if !src.is_empty() && prev_end < src.len() {
@@ -159,9 +198,7 @@ fn format_item(out: &mut String, item: &Item) {
 fn format_block(out: &mut String, block: &Block, indent: usize) {
     out.push_str("{\n");
     let ind = "  ".repeat(indent + 1);
-    let n_parts = block.stmts.len() + usize::from(block.tail.is_some());
-    let mut part = 0usize;
-    for stmt in &block.stmts {
+    for (i, stmt) in block.stmts.iter().enumerate() {
         out.push_str(&ind);
         match stmt {
             BlockStmt::Let(l) => {
@@ -187,8 +224,12 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
             }
         }
         out.push('\n');
-        part += 1;
-        if part < n_parts {
+        // Blank between consecutive lets is unnecessary; blank before a free expr / tail.
+        if let Some(next) = block.stmts.get(i + 1) {
+            if block_needs_blank(stmt, next) {
+                out.push('\n');
+            }
+        } else if block.tail.is_some() {
             out.push('\n');
         }
     }
@@ -199,6 +240,11 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
     }
     out.push_str(&"  ".repeat(indent));
     out.push('}');
+}
+
+fn block_needs_blank(prev: &BlockStmt, next: &BlockStmt) -> bool {
+    // Keep consecutive `let`s dense; separate lets from free expressions.
+    !matches!((prev, next), (BlockStmt::Let(_), BlockStmt::Let(_)))
 }
 
 fn format_expr(out: &mut String, expr: &Expr, indent: usize) {
@@ -414,10 +460,62 @@ pub target app = {
     }
 
     #[test]
+    fn fmt_dense_const_and_use_groups() {
+        let src = r#"// banner
+// line 2
+
+use "./a.lam";
+use "std/golang.lam";
+
+// constants
+const A: String = "a";
+const B: Int = 1;
+const C: Bool = true;
+
+// lets
+let x = param("k", "v");
+let y = A + "z";
+
+fn helper(s: Stage) -> Stage {
+  s.run("true")
+}
+
+pub target app = Stage.from("alpine:3.19").name("app");
+"#;
+        let out = format_source("t.lam", src).unwrap();
+        // uses packed
+        assert!(
+            out.contains("use \"./a.lam\";\nuse \"std/golang.lam\";\n"),
+            "uses should be dense:\n{out}"
+        );
+        // consts packed (section comment then dense consts)
+        assert!(
+            out.contains("// constants\nconst A: String = \"a\";\nconst B: Int = 1;\nconst C: Bool = true;\n"),
+            "consts should be dense under section comment:\n{out}"
+        );
+        // blank before fn / target
+        assert!(out.contains(";\n\nfn helper"), "blank before fn:\n{out}");
+        assert!(
+            out.contains("}\n\npub target app"),
+            "blank before target:\n{out}"
+        );
+        // file header blank after comments
+        assert!(
+            out.starts_with("// banner\n// line 2\n\nuse "),
+            "header blank after banner:\n{out}"
+        );
+        // idempotent
+        let out2 = format_source("t.lam", &out).unwrap();
+        assert_eq!(out, out2, "not idempotent:\n{out}");
+    }
+
+    #[test]
     fn fmt_hello_static_stable() {
         let src = include_str!("../../../examples/hello-static/src/image.lam");
         let out = format_source("image.lam", src).unwrap();
         let out2 = format_source("image.lam", &out).unwrap();
         assert_eq!(out, out2, "fmt not idempotent:\n{out}");
+        // stays close to hand style: no double-spaced noise
+        assert!(!out.contains("\n\n\n"), "too many blank lines:\n{out}");
     }
 }
