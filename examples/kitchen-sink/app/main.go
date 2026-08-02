@@ -8,14 +8,20 @@ import (
 )
 
 func main() {
-	health := flag.Bool("health", false, "healthcheck then exit")
+	health := flag.Bool("health", false, "healthcheck then exit 0")
 	listen := flag.String("listen", ":8080", "listen address")
 	flag.Parse()
 	if *health {
 		os.Exit(0)
 	}
-	http.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "kitchen-sink ok")
 	})
-	_ = http.ListenAndServe(*listen, nil)
+	addr := *listen
+	fmt.Fprintln(os.Stderr, "listening on", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

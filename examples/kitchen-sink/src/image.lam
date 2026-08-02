@@ -5,62 +5,70 @@
 // Stage ops: from / from_arg, workdir, run, run_with, copy, copy_many, copy_from,
 //            env, arg, arg_default, user, entrypoint, cmd, expose, label,
 //            healthcheck, platform, name
-// Mounts:    cache, secret, ssh, bind
+// Mounts:    cache, secret, ssh, bind (secret/ssh optional at solve time)
 // Modules:   path use + stdlib use
 //
 //   lamina check examples/kitchen-sink
 //   lamina explain examples/kitchen-sink --target app
 //   lamina build examples/kitchen-sink --target app -t kitchen-sink:dev
+//   docker run --rm -p 8080:8080 kitchen-sink:dev
 
 use "./helpers.lam";
-
 use "std/golang.lam";
 
-// Module-level build-arg declaration (default used when --build-arg omitted).
-
+// Module-level build-arg declaration (override with --build-arg RUNTIME_BASE=…).
 arg "RUNTIME_BASE", "alpine:3.19";
 
 // Typed constants (String / Int / Bool).
-
 const APP_NAME: String = "kitchen-sink";
-
 const HTTP_PORT: Int = 8080;
-
 const USE_CACHE: Bool = true;
-
 const USE_RUNTIME_ARG: Bool = false;
+// When true, attach secret/ssh/bind mounts (still optional at solve: required=false).
+const USE_PRIVATE_MOUNTS: Bool = true;
 
 // Compile-time param (override with --param go_version=1.23-alpine).
-
 let go_tag = param("go_version", "1.22-alpine");
 
 // `for … in` over a list (pure values → List[String]).
-
 let apk_packages = for pkg in ["ca-certificates", "tzdata"] {
   pkg
 };
 
 // Pure `let` + string concat (`+`).
-
 let image_title = APP_NAME + " service";
 
 // Local (non-exported) helper using if/else + true/false.
-
 fn maybe_debug_env(s: Stage, debug: Bool) -> Stage {
   if debug {
-    s
-      .env("LOG_LEVEL", "debug")
+    s.env("LOG_LEVEL", "debug")
   } else {
-    s
-      .env("LOG_LEVEL", "info")
+    s.env("LOG_LEVEL", "info")
+  }
+}
+
+// Attach optional private mounts when enabled (syntax tour for Mount.*).
+fn with_mod_download(s: Stage, private: Bool) -> Stage {
+  if private {
+    s.run_with(
+      "go mod download",
+      [
+        Mount.cache("/go/pkg", "go-pkg"),
+        Mount.secret("netrc", "/root/.netrc"),
+        Mount.ssh("/run/buildkit/ssh_agent.0"),
+        Mount.bind("app", "/src/app-bind")
+      ]
+    )
+  } else {
+    s.run_with("go mod download", [Mount.cache("/go/pkg", "go-pkg")])
   }
 }
 
 // ── targets ──────────────────────────────────────────────────────────
-/// Multi-stage production image (builder + slim runtime).
 
+/// Multi-stage production image (builder + slim runtime).
 pub target app = {
-  let builder = from_version(go_tag)
+  let builder0 = from_version(go_tag)
     .platform("linux/amd64")
     .workdir("/src")
     .arg("BUILD_ID")
@@ -68,23 +76,29 @@ pub target app = {
     .env("CGO_ENABLED", "0")
     .env("APP_NAME", APP_NAME)
     .copy("app/go.mod", "./go.mod")
-    .copy_many(["app/main.go", "app/go.mod"], "./")
-    .run_with("go mod download", [Mount.cache("/go/pkg", "go-pkg"), Mount.secret("netrc", "/root/.netrc"), Mount.ssh("/run/buildkit/ssh_agent.0"), Mount.bind("app", "/src/app-bind")]);
+    .copy_many(["app/main.go", "app/go.mod"], "./");
 
-  let builder2 = run_cached(builder, "CGO_ENABLED=0 go build -ldflags='-s -w' -o /out/server ./", USE_CACHE)
+  let builder1 = with_mod_download(builder0, USE_PRIVATE_MOUNTS);
+
+  let builder = run_cached(
+    builder1,
+    "mkdir -p /out && CGO_ENABLED=0 go build -ldflags='-s -w' -o /out/server .",
+    USE_CACHE
+  )
     .name("builder");
 
+  // Runtime: copy binary from builder; optional Stage.from_arg base.
   let runtime = runtime_base(USE_RUNTIME_ARG, "alpine:3.19")
     .platform("linux/amd64")
     .run("apk add --no-cache ca-certificates tzdata")
-    .copy_from(builder2, "/out/server", "/usr/local/bin/server")
+    .copy_from(builder, "/out/server", "/usr/local/bin/server")
     .user("nobody")
     .workdir("/")
     .expose(HTTP_PORT)
     .env("PORT", "8080")
     .label("org.opencontainers.image.title", image_title)
     .label("app", APP_NAME)
-    .healthcheck("CMD /usr/local/bin/server -health")
+    .healthcheck("CMD /usr/local/bin/server -health || exit 1")
     .entrypoint(["/usr/local/bin/server"])
     .cmd(["-listen", ":8080"]);
 
@@ -93,7 +107,6 @@ pub target app = {
 };
 
 /// Tiny debug image (second target; alpine helper from path module).
-
 pub target debug = alpine("3.19")
   .run("apk add --no-cache curl")
   .cmd(["/bin/sh"])
