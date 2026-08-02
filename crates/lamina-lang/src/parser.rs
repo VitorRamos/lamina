@@ -308,10 +308,7 @@ impl<'a> Parser<'a> {
                 stmts.push(BlockStmt::Expr(expr));
             } else if self.peek().kind == TokenKind::RBrace {
                 tail = Some(Box::new(expr));
-            } else if matches!(
-                expr.kind,
-                ExprKind::For { .. } | ExprKind::If { .. }
-            ) {
+            } else if matches!(expr.kind, ExprKind::For { .. } | ExprKind::If { .. }) {
                 // `for` / `if` as statements may omit trailing `;` (like Rust).
                 stmts.push(BlockStmt::Expr(expr));
             } else {
