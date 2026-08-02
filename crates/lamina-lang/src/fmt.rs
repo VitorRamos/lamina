@@ -244,10 +244,7 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
 
 fn block_needs_blank(prev: &BlockStmt, next: &BlockStmt) -> bool {
     // Keep consecutive `let`s dense; separate lets from free expressions.
-    !matches!(
-        (prev, next),
-        (BlockStmt::Let(_), BlockStmt::Let(_))
-    )
+    !matches!((prev, next), (BlockStmt::Let(_), BlockStmt::Let(_)))
 }
 
 fn format_expr(out: &mut String, expr: &Expr, indent: usize) {
@@ -497,10 +494,7 @@ pub target app = Stage.from("alpine:3.19").name("app");
             "consts should be dense under section comment:\n{out}"
         );
         // blank before fn / target
-        assert!(
-            out.contains(";\n\nfn helper"),
-            "blank before fn:\n{out}"
-        );
+        assert!(out.contains(";\n\nfn helper"), "blank before fn:\n{out}");
         assert!(
             out.contains("}\n\npub target app"),
             "blank before target:\n{out}"
@@ -522,9 +516,6 @@ pub target app = Stage.from("alpine:3.19").name("app");
         let out2 = format_source("image.lam", &out).unwrap();
         assert_eq!(out, out2, "fmt not idempotent:\n{out}");
         // stays close to hand style: no double-spaced noise
-        assert!(
-            !out.contains("\n\n\n"),
-            "too many blank lines:\n{out}"
-        );
+        assert!(!out.contains("\n\n\n"), "too many blank lines:\n{out}");
     }
 }
