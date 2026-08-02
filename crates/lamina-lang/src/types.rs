@@ -126,6 +126,28 @@ fn check_block(
                 let t = check_expr(&l.value, &local, fns, l.ty.as_ref(), diags)?;
                 local.insert(l.name.clone(), t);
             }
+            BlockStmt::Assign { name, value, span } => {
+                let Some(prev) = local.get(name).cloned() else {
+                    diags.push(DiagnosticMsg::error(
+                        format!("cannot assign to undefined name `{name}` (use `let` first)"),
+                        Some(*span),
+                    ));
+                    return None;
+                };
+                let t = check_expr(value, &local, fns, Some(&prev), diags)?;
+                if t != prev {
+                    diags.push(DiagnosticMsg::error(
+                        format!(
+                            "cannot assign {} to `{name}` (expected {})",
+                            t.as_str(),
+                            prev.as_str()
+                        ),
+                        Some(*span),
+                    ));
+                    return None;
+                }
+                local.insert(name.clone(), t);
+            }
             BlockStmt::Expr(e) => {
                 check_expr(e, &local, fns, None, diags)?;
             }
@@ -133,8 +155,16 @@ fn check_block(
     }
     if let Some(tail) = &block.tail {
         check_expr(tail, &local, fns, expected, diags)
+    } else if let Some(BlockStmt::Assign { name, .. }) = block.stmts.last() {
+        // Assign-only block: type is the assigned binding's type (for accumulation loops).
+        local.get(name).cloned().or_else(|| {
+            diags.push(DiagnosticMsg::error(
+                "block requires a tail expression",
+                Some(block.span),
+            ));
+            None
+        })
     } else {
-        // empty tail — only valid if not required; treat as error for typed contexts
         diags.push(DiagnosticMsg::error(
             "block requires a tail expression",
             Some(block.span),

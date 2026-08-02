@@ -175,6 +175,12 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
                 format_expr(out, &l.value, indent + 1);
                 out.push(';');
             }
+            BlockStmt::Assign { name, value, .. } => {
+                out.push_str(name);
+                out.push_str(" = ");
+                format_expr(out, value, indent + 1);
+                out.push(';');
+            }
             BlockStmt::Expr(e) => {
                 format_expr(out, e, indent + 1);
                 out.push(';');

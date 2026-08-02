@@ -176,19 +176,45 @@ impl<'a> Evaluator<'a> {
 
     fn eval_block(&mut self, block: &Block, env: &HashMap<String, Value>) -> Result<Value> {
         let mut local = env.clone();
+        self.eval_block_mut(block, &mut local)
+    }
+
+    /// Evaluate a block, mutating `env` (lets, assigns, and nested `for` updates).
+    fn eval_block_mut(&mut self, block: &Block, env: &mut HashMap<String, Value>) -> Result<Value> {
         for stmt in &block.stmts {
             match stmt {
                 BlockStmt::Let(l) => {
-                    let v = self.eval_expr(&l.value, &local)?;
-                    local.insert(l.name.clone(), v);
+                    let v = self.eval_expr_mut(&l.value, env)?;
+                    env.insert(l.name.clone(), v);
+                }
+                BlockStmt::Assign { name, value, span } => {
+                    if !env.contains_key(name) {
+                        return Err(CompileError::single(
+                            Some(self.file),
+                            DiagnosticMsg::error(
+                                format!("cannot assign to undefined name `{name}`"),
+                                Some(*span),
+                            ),
+                        ));
+                    }
+                    let v = self.eval_expr_mut(value, env)?;
+                    env.insert(name.clone(), v);
                 }
                 BlockStmt::Expr(e) => {
-                    let _ = self.eval_expr(e, &local)?;
+                    let _ = self.eval_expr_mut(e, env)?;
                 }
             }
         }
         if let Some(tail) = &block.tail {
-            self.eval_expr(tail, &local)
+            self.eval_expr_mut(tail, env)
+        } else if let Some(BlockStmt::Assign { name, .. }) = block.stmts.last() {
+            // Allow assign-only blocks (common in `for` accumulation loops).
+            env.get(name).cloned().ok_or_else(|| {
+                CompileError::single(
+                    Some(self.file),
+                    DiagnosticMsg::error("block missing tail expression", Some(block.span)),
+                )
+            })
         } else {
             Err(CompileError::single(
                 Some(self.file),
@@ -198,6 +224,11 @@ impl<'a> Evaluator<'a> {
     }
 
     fn eval_expr(&mut self, expr: &Expr, env: &HashMap<String, Value>) -> Result<Value> {
+        let mut local = env.clone();
+        self.eval_expr_mut(expr, &mut local)
+    }
+
+    fn eval_expr_mut(&mut self, expr: &Expr, env: &mut HashMap<String, Value>) -> Result<Value> {
         match &expr.kind {
             ExprKind::String(s) => Ok(Value::String(s.clone())),
             ExprKind::StringInterp(parts) => {
@@ -232,7 +263,7 @@ impl<'a> Evaluator<'a> {
             ExprKind::List(els) => {
                 let mut xs = Vec::new();
                 for e in els {
-                    xs.push(self.eval_expr(e, env)?);
+                    xs.push(self.eval_expr_mut(e, env)?);
                 }
                 Ok(Value::List(xs))
             }
@@ -255,14 +286,18 @@ impl<'a> Evaluator<'a> {
                         DiagnosticMsg::error("wrong number of arguments", Some(expr.span)),
                     ));
                 }
-                let mut local = env.clone();
-                for (p, a) in params.iter().zip(args.iter()) {
-                    local.insert(p.clone(), self.eval_expr(a, env)?);
+                let mut local = HashMap::new();
+                // Capture free vars from caller env for nested fns that close over outer lets.
+                for (k, v) in env.iter() {
+                    local.insert(k.clone(), v.clone());
                 }
-                self.eval_block(&body, &local)
+                for (p, a) in params.iter().zip(args.iter()) {
+                    local.insert(p.clone(), self.eval_expr_mut(a, env)?);
+                }
+                self.eval_block_mut(&body, &mut local)
             }
             ExprKind::Method { recv, method, args } => {
-                let rv = self.eval_expr(recv, env)?;
+                let rv = self.eval_expr_mut(recv, env)?;
                 let Some(sid) = rv.as_stage() else {
                     return Err(CompileError::single(
                         Some(self.file),
@@ -272,7 +307,7 @@ impl<'a> Evaluator<'a> {
                 self.eval_method(sid, method, args, env, expr)
             }
             ExprKind::StageFrom { image } => {
-                let v = self.eval_expr(image, env)?;
+                let v = self.eval_expr_mut(image, env)?;
                 let Some(img) = v.as_string() else {
                     return Err(CompileError::single(
                         Some(self.file),
@@ -295,7 +330,7 @@ impl<'a> Evaluator<'a> {
             ExprKind::MountCtor { kind, args } => {
                 let mut vals = Vec::new();
                 for a in args {
-                    vals.push(self.eval_expr(a, env)?);
+                    vals.push(self.eval_expr_mut(a, env)?);
                 }
                 let spec = match kind.as_str() {
                     "cache" => MountSpec {
@@ -343,7 +378,7 @@ impl<'a> Evaluator<'a> {
                     return Ok(Value::String(v.clone()));
                 }
                 if let Some(d) = default {
-                    return self.eval_expr(d, env);
+                    return self.eval_expr_mut(d, env);
                 }
                 Err(CompileError::single(
                     Some(self.file),
@@ -354,8 +389,8 @@ impl<'a> Evaluator<'a> {
                 ))
             }
             ExprKind::BinaryAdd { left, right } => {
-                let l = self.eval_expr(left, env)?;
-                let r = self.eval_expr(right, env)?;
+                let l = self.eval_expr_mut(left, env)?;
+                let r = self.eval_expr_mut(right, env)?;
                 match (l, r) {
                     (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
@@ -370,8 +405,10 @@ impl<'a> Evaluator<'a> {
                 then_block,
                 else_block,
             } => {
-                let c = self.eval_expr(cond, env)?;
+                let c = self.eval_expr_mut(cond, env)?;
                 match c {
+                    // Branches get a clone so assigns don't leak unless we want them to;
+                    // Stage accumulation usually uses `for`, not `if`.
                     Value::Bool(true) => self.eval_block(then_block, env),
                     Value::Bool(false) => self.eval_block(else_block, env),
                     _ => Err(CompileError::single(
@@ -381,7 +418,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             ExprKind::For { var, iter, body } => {
-                let it = self.eval_expr(iter, env)?;
+                let it = self.eval_expr_mut(iter, env)?;
                 let Value::List(items) = it else {
                     return Err(CompileError::single(
                         Some(self.file),
@@ -397,13 +434,14 @@ impl<'a> Evaluator<'a> {
                             DiagnosticMsg::error("eval loop iteration cap exceeded", None),
                         ));
                     }
-                    let mut local = env.clone();
-                    local.insert(var.clone(), item);
-                    out.push(self.eval_block(body, &local)?);
+                    // Share outer env so `x = x.run(...)` accumulates across iterations.
+                    env.insert(var.clone(), item);
+                    out.push(self.eval_block_mut(body, env)?);
                 }
+                env.remove(var);
                 Ok(Value::List(out))
             }
-            ExprKind::Block(b) => self.eval_block(b, env),
+            ExprKind::Block(b) => self.eval_block_mut(b, env),
         }
     }
 
@@ -412,12 +450,12 @@ impl<'a> Evaluator<'a> {
         sid: StageId,
         method: &str,
         args: &[Expr],
-        env: &HashMap<String, Value>,
+        env: &mut HashMap<String, Value>,
         expr: &Expr,
     ) -> Result<Value> {
         let mut vals = Vec::new();
         for a in args {
-            vals.push(self.eval_expr(a, env)?);
+            vals.push(self.eval_expr_mut(a, env)?);
         }
         let instr = match method {
             "workdir" => Instr::Workdir(req_str(&vals, 0, expr, self.file)?),
@@ -534,5 +572,32 @@ pub target app = {
         let ir = evaluate(&f, &m, &EvalInput::default()).unwrap();
         let set = ir.solve_set(&["app".into()]);
         assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn for_loop_reassigns_stage() {
+        let src = r#"
+pub target app = {
+  let s = Stage.from("alpine:3.19");
+  for pkg in ["curl", "jq"] {
+    s = s.run("apk add --no-cache " + pkg);
+  }
+  s.name("app")
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let ir = evaluate(&f, &m, &EvalInput::default()).expect("eval");
+        // from + run curl + run jq + name = linear chain in solve_set
+        let set = ir.solve_set(&["app".into()]);
+        assert_eq!(set.len(), 1);
+        let id = *ir.targets.get("app").unwrap();
+        let runs = ir.stages[&id]
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, Instr::Run(_)))
+            .count();
+        assert_eq!(runs, 2, "expected two apk runs from the for loop");
     }
 }

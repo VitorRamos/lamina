@@ -105,6 +105,12 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum BlockStmt {
     Let(LetDecl),
+    /// `name = expr;` — reassign an existing binding (e.g. accumulate a Stage in a loop).
+    Assign {
+        name: String,
+        value: Expr,
+        span: crate::span::Span,
+    },
     Expr(Expr),
 }
 
