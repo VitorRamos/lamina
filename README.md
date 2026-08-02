@@ -38,6 +38,8 @@ cargo run -p lamina-cli -- --version
 cargo test --workspace
 ```
 
+**CI:** every PR and push to `main` must stay green (fmt, clippy, tests, example `lamina check`). See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Release notes: [`docs/RELEASE.md`](docs/RELEASE.md).
+
 ## CLI (1.0)
 
 ```text
