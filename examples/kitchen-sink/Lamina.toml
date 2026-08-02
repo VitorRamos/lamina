@@ -1,0 +1,15 @@
+[package]
+name = "kitchen-sink"
+version = "0.1.0"
+entry = "src/image.lam"
+
+[params]
+go_version = "1.22-alpine"
+
+[build]
+context = "."
+platforms = ["linux/amd64"]
+
+[lint]
+# Demo uses floating tags intentionally (matches other examples).
+deny = ["secret-env"]

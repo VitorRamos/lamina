@@ -27,12 +27,22 @@ impl<'a> Parser<'a> {
         &self.tokens[self.pos.min(self.tokens.len() - 1)]
     }
 
+    fn peek_at(&self, offset: usize) -> &Token {
+        &self.tokens[(self.pos + offset).min(self.tokens.len() - 1)]
+    }
+
     fn bump(&mut self) -> Token {
         let t = self.peek().clone();
         if self.pos < self.tokens.len() - 1 {
             self.pos += 1;
         }
         t
+    }
+
+    /// `name = …` statement (not `let name =`).
+    fn at_assign(&self) -> bool {
+        matches!(self.peek().kind, TokenKind::Ident(_))
+            && matches!(self.peek_at(1).kind, TokenKind::Eq)
     }
 
     fn expect_punct(&mut self, kind: TokenKind) -> std::result::Result<Token, DiagnosticMsg> {
@@ -277,6 +287,20 @@ impl<'a> Parser<'a> {
                 stmts.push(BlockStmt::Let(self.parse_let()?));
                 continue;
             }
+            // `name = expr;` — reassignment (looks like Ident Eq …)
+            if self.at_assign() {
+                let name_tok = self.bump();
+                let name = match name_tok.kind {
+                    TokenKind::Ident(s) => s,
+                    _ => unreachable!(),
+                };
+                self.expect_punct(TokenKind::Eq)?;
+                let value = self.parse_expr()?;
+                self.expect_punct(TokenKind::Semicolon)?;
+                let span = name_tok.span.merge(value.span);
+                stmts.push(BlockStmt::Assign { name, value, span });
+                continue;
+            }
             // Parse expression; if followed by `;` it's a stmt, else tail.
             let expr = self.parse_expr()?;
             if self.peek().kind == TokenKind::Semicolon {
@@ -284,6 +308,9 @@ impl<'a> Parser<'a> {
                 stmts.push(BlockStmt::Expr(expr));
             } else if self.peek().kind == TokenKind::RBrace {
                 tail = Some(Box::new(expr));
+            } else if matches!(expr.kind, ExprKind::For { .. } | ExprKind::If { .. }) {
+                // `for` / `if` as statements may omit trailing `;` (like Rust).
+                stmts.push(BlockStmt::Expr(expr));
             } else {
                 return Err(DiagnosticMsg::error(
                     "expected `;` or end of block after expression",
@@ -362,8 +389,22 @@ impl<'a> Parser<'a> {
             self.bump();
             // method name or Stage.from handled in primary mostly
             let name_tok = self.bump();
-            let method = match name_tok.kind {
-                TokenKind::Ident(s) => s,
+            // Method names may be keywords (e.g. Stage.arg) when they appear after `.`.
+            let method = match &name_tok.kind {
+                TokenKind::Ident(s) => s.clone(),
+                TokenKind::Arg => "arg".into(),
+                TokenKind::Const => "const".into(),
+                TokenKind::Let => "let".into(),
+                TokenKind::Fn => "fn".into(),
+                TokenKind::Pub => "pub".into(),
+                TokenKind::Target => "target".into(),
+                TokenKind::If => "if".into(),
+                TokenKind::Else => "else".into(),
+                TokenKind::For => "for".into(),
+                TokenKind::In => "in".into(),
+                TokenKind::True => "true".into(),
+                TokenKind::False => "false".into(),
+                TokenKind::Use => "use".into(),
                 _ => {
                     return Err(DiagnosticMsg::error(
                         "expected method name",
@@ -602,7 +643,7 @@ mod tests {
     #[test]
     fn parse_target_stage() {
         let src = r#"
-pub target app = Stage.from("alpine:3.19").run("echo hi").name("app");
+pub target app = Stage.from("alpine:3.19").arg("X").run("echo hi").name("app");
 "#;
         let f = SourceFile::new(FileId(0), "t.lam", src);
         let m = parse(&f).expect("parse");

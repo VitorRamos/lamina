@@ -1,0 +1,36 @@
+// Path module: helpers for the kitchen-sink example.
+// Imported with: use "./helpers.lam";
+/// Official alpine image by version tag.
+
+pub fn alpine(version: String) -> Stage {
+  Stage.from("alpine:" + version)
+}
+
+/// Stamp a single OCI label.
+
+pub fn with_label(s: Stage, key: String, value: String) -> Stage {
+  s
+    .label(key, value)
+}
+
+/// Optional BuildKit cache mount around a shell step.
+
+pub fn run_cached(s: Stage, cmd: String, enable: Bool) -> Stage {
+  if enable {
+    s
+      .run_with(cmd, [Mount.cache("/var/cache/ks", "kitchen-sink-cache")])
+  } else {
+    s
+      .run(cmd)
+  }
+}
+
+/// Runtime base: either a fixed image or a build-arg (`Stage.from_arg`).
+
+pub fn runtime_base(from_build_arg: Bool, fallback: String) -> Stage {
+  if from_build_arg {
+    Stage.from_arg("RUNTIME_BASE")
+  } else {
+    Stage.from(fallback)
+  }
+}

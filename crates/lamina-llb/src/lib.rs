@@ -422,18 +422,30 @@ fn mount_flag(m: &MountSpec) -> String {
         MountKind::Cache => {
             format!("--mount=type=cache,target={},id={}", m.target, m.id)
         }
+        // `required=false` so demos and optional private deps still solve when
+        // the caller did not pass --secret / --ssh (BuildKit default is required).
         MountKind::Secret => {
-            format!("--mount=type=secret,id={},target={}", m.id, m.target)
+            format!(
+                "--mount=type=secret,id={},target={},required=false",
+                m.id, m.target
+            )
         }
         MountKind::Ssh => {
             if m.id.is_empty() {
-                format!("--mount=type=ssh,target={}", m.target)
+                format!("--mount=type=ssh,target={},required=false", m.target)
             } else {
-                format!("--mount=type=ssh,id={},target={}", m.id, m.target)
+                format!(
+                    "--mount=type=ssh,id={},target={},required=false",
+                    m.id, m.target
+                )
             }
         }
         MountKind::Bind => {
-            format!("--mount=type=bind,source={},target={}", m.source, m.target)
+            // Read-only bind of a context path (common for local source trees).
+            format!(
+                "--mount=type=bind,source={},target={},readonly=true",
+                m.source, m.target
+            )
         }
     }
 }
