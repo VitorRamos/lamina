@@ -362,8 +362,22 @@ impl<'a> Parser<'a> {
             self.bump();
             // method name or Stage.from handled in primary mostly
             let name_tok = self.bump();
-            let method = match name_tok.kind {
-                TokenKind::Ident(s) => s,
+            // Method names may be keywords (e.g. Stage.arg) when they appear after `.`.
+            let method = match &name_tok.kind {
+                TokenKind::Ident(s) => s.clone(),
+                TokenKind::Arg => "arg".into(),
+                TokenKind::Const => "const".into(),
+                TokenKind::Let => "let".into(),
+                TokenKind::Fn => "fn".into(),
+                TokenKind::Pub => "pub".into(),
+                TokenKind::Target => "target".into(),
+                TokenKind::If => "if".into(),
+                TokenKind::Else => "else".into(),
+                TokenKind::For => "for".into(),
+                TokenKind::In => "in".into(),
+                TokenKind::True => "true".into(),
+                TokenKind::False => "false".into(),
+                TokenKind::Use => "use".into(),
                 _ => {
                     return Err(DiagnosticMsg::error(
                         "expected method name",
@@ -602,7 +616,7 @@ mod tests {
     #[test]
     fn parse_target_stage() {
         let src = r#"
-pub target app = Stage.from("alpine:3.19").run("echo hi").name("app");
+pub target app = Stage.from("alpine:3.19").arg("X").run("echo hi").name("app");
 "#;
         let f = SourceFile::new(FileId(0), "t.lam", src);
         let m = parse(&f).expect("parse");

@@ -58,6 +58,9 @@ cargo run -p lamina-cli -- check examples/hello-static
 cargo run -p lamina-cli -- lock examples/compose-demo
 cargo run -p lamina-cli -- check examples/compose-demo --locked
 cargo run -p lamina-cli -- build examples/platform-demo --target app -t platform-demo:dev --platform linux/amd64
+# language tour (keywords + Stage/Mount surface):
+cargo run -p lamina-cli -- check examples/kitchen-sink
+cargo run -p lamina-cli -- explain examples/kitchen-sink --target app
 ```
 ## Workspace layout
 

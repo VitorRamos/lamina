@@ -1,0 +1,101 @@
+// Kitchen-sink demo: one project that exercises Lamina's language surface.
+//
+// Keywords:  use, arg, const, let, fn, pub, target, if, else, for, in, true, false
+// Soft:      param, Stage, Mount
+// Stage ops: from / from_arg, workdir, run, run_with, copy, copy_many, copy_from,
+//            env, arg, arg_default, user, entrypoint, cmd, expose, label,
+//            healthcheck, platform, name
+// Mounts:    cache, secret, ssh, bind
+// Modules:   path use + stdlib use
+//
+//   lamina check examples/kitchen-sink
+//   lamina explain examples/kitchen-sink --target app
+//   lamina build examples/kitchen-sink --target app -t kitchen-sink:dev
+
+use "./helpers.lam";
+
+use "std/golang.lam";
+
+// Module-level build-arg declaration (default used when --build-arg omitted).
+
+arg "RUNTIME_BASE", "alpine:3.19";
+
+// Typed constants (String / Int / Bool).
+
+const APP_NAME: String = "kitchen-sink";
+
+const HTTP_PORT: Int = 8080;
+
+const USE_CACHE: Bool = true;
+
+const USE_RUNTIME_ARG: Bool = false;
+
+// Compile-time param (override with --param go_version=1.23-alpine).
+
+let go_tag = param("go_version", "1.22-alpine");
+
+// `for … in` over a list (pure values → List[String]).
+
+let apk_packages = for pkg in ["ca-certificates", "tzdata"] {
+  pkg
+};
+
+// Pure `let` + string concat (`+`).
+
+let image_title = APP_NAME + " service";
+
+// Local (non-exported) helper using if/else + true/false.
+
+fn maybe_debug_env(s: Stage, debug: Bool) -> Stage {
+  if debug {
+    s
+      .env("LOG_LEVEL", "debug")
+  } else {
+    s
+      .env("LOG_LEVEL", "info")
+  }
+}
+
+// ── targets ──────────────────────────────────────────────────────────
+/// Multi-stage production image (builder + slim runtime).
+
+pub target app = {
+  let builder = from_version(go_tag)
+    .platform("linux/amd64")
+    .workdir("/src")
+    .arg("BUILD_ID")
+    .arg_default("BUILD_ID", "dev")
+    .env("CGO_ENABLED", "0")
+    .env("APP_NAME", APP_NAME)
+    .copy("app/go.mod", "./go.mod")
+    .copy_many(["app/main.go", "app/go.mod"], "./")
+    .run_with("go mod download", [Mount.cache("/go/pkg", "go-pkg"), Mount.secret("netrc", "/root/.netrc"), Mount.ssh("/run/buildkit/ssh_agent.0"), Mount.bind("app", "/src/app-bind")]);
+
+  let builder2 = run_cached(builder, "CGO_ENABLED=0 go build -ldflags='-s -w' -o /out/server ./", USE_CACHE)
+    .name("builder");
+
+  let runtime = runtime_base(USE_RUNTIME_ARG, "alpine:3.19")
+    .platform("linux/amd64")
+    .run("apk add --no-cache ca-certificates tzdata")
+    .copy_from(builder2, "/out/server", "/usr/local/bin/server")
+    .user("nobody")
+    .workdir("/")
+    .expose(HTTP_PORT)
+    .env("PORT", "8080")
+    .label("org.opencontainers.image.title", image_title)
+    .label("app", APP_NAME)
+    .healthcheck("CMD /usr/local/bin/server -health")
+    .entrypoint(["/usr/local/bin/server"])
+    .cmd(["-listen", ":8080"]);
+
+  maybe_debug_env(with_label(runtime, "demo", "kitchen-sink"), false)
+    .name("app")
+};
+
+/// Tiny debug image (second target; alpine helper from path module).
+
+pub target debug = alpine("3.19")
+  .run("apk add --no-cache curl")
+  .cmd(["/bin/sh"])
+  .label("app", APP_NAME + "-debug")
+  .name("debug");
