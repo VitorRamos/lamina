@@ -56,9 +56,8 @@ impl ModuleLoadContext {
         // Keep only paths that exist so error messages stay honest
         // (still search non-existing last-resort via full list for first match).
         // Prefer existing dirs first for speed/clarity.
-        let (existing, missing): (Vec<_>, Vec<_>) = stdlib_paths
-            .into_iter()
-            .partition(|p| p.is_dir());
+        let (existing, missing): (Vec<_>, Vec<_>) =
+            stdlib_paths.into_iter().partition(|p| p.is_dir());
         let mut ordered = existing;
         ordered.extend(missing);
 

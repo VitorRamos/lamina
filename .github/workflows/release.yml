@@ -1,0 +1,87 @@
+# Major-version GitHub Releases only (v1.0.0, v2.0.0, …).
+#
+# Intentionally does NOT publish to crates.io — that stays manual until we
+# decide a policy. Trigger:
+#   - push tag matching vMAJOR.0.0
+#   - or workflow_dispatch (build artifacts without creating a release if dry-run)
+#
+# Minor/patch tags (v1.2.0, v1.2.1) do not run this workflow.
+
+name: Release (major)
+
+on:
+  push:
+    tags:
+      # Major only: v1.0.0, v2.0.0, …  (not v1.2.0). Glob, not regex.
+      - "v*.0.0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build binary only; skip creating a GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  github-release:
+    name: Build CLI + GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build -p lamina-cli --release
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME:-dispatch}"
+          OUT="lamina-${VERSION}-x86_64-unknown-linux-gnu"
+          mkdir -p dist
+          cp target/release/lamina "dist/${OUT}"
+          tar -C dist -czf "dist/${OUT}.tar.gz" "${OUT}"
+          (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
+          ls -la dist/
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lamina-linux-amd64
+          path: dist/*
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          body: |
+            Major release `${{ github.ref_name }}`.
+
+            **CLI binary:** `lamina` (linux x86_64) attached below.
+
+            **crates.io:** not published by this workflow — publish manually if desired:
+
+            ```bash
+            cargo publish -p lamina-lang
+            cargo publish -p lamina-llb
+            cargo publish -p lamina-client
+            cargo publish -p lamina-lsp
+            cargo publish -p lamina-cli
+            ```
+
+            See `docs/RELEASE.md`.

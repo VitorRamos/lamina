@@ -99,10 +99,7 @@ pub fn analyze(path: &Path, source: &str) -> Analysis {
     analysis
 }
 
-fn index_imported_modules(
-    resolved: &[lamina_lang::lock::ResolvedModule],
-    analysis: &mut Analysis,
-) {
+fn index_imported_modules(resolved: &[lamina_lang::lock::ResolvedModule], analysis: &mut Analysis) {
     for rm in resolved {
         let Ok(src) = std::fs::read_to_string(&rm.path) else {
             continue;
