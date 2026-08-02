@@ -23,7 +23,7 @@ It does **not** generate Dockerfiles as the product path.
 | CLI | `lamina` |
 | Config | `Lamina.toml` |
 | Sources | `*.lam` |
-| Crates | `lamina` (lib), `lamina-cli` (bin), `lamina-llb`, `lamina-client` |
+| Crates | `lamina-lang` (lib), `lamina-cli` (bin), `lamina-llb`, `lamina-client` |
 
 ---
 
@@ -111,7 +111,7 @@ lamina/
   Cargo.toml                # workspace
   crates/
     lamina-cli/             # binary: lamina
-    lamina/                 # syntax, sema, eval, ir
+    lamina-lang/            # crates.io name; syntax, sema, eval, ir
     lamina-llb/             # IR → pb.Definition
     lamina-client/          # BuildKit gRPC Solve
   docs/

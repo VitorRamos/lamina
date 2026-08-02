@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Renamed crates.io library package **`lamina` → `lamina-lang`** (name taken on crates.io).
+  Path: `crates/lamina-lang`. Rust imports: `lamina_lang::…`.
+  CLI binary remains **`lamina`** (`lamina-cli`).
+
 ## 1.2.0 — 2026-08-01
 
 ### Added

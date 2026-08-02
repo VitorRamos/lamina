@@ -13,7 +13,7 @@ name = "lamina"
 path = "src/main.rs"
 
 [dependencies]
-lamina = { workspace = true }
+lamina-lang = { workspace = true }
 lamina-llb = { workspace = true }
 lamina-client = { workspace = true }
 lamina-lsp = { workspace = true }

@@ -25,7 +25,7 @@ The name **Lamina** (thin layer / sheet) reflects image builds as **composed lay
 | CLI | `lamina` |
 | Config | `Lamina.toml` |
 | Source extension | `.lam` |
-| Crates | `lamina` (lib), `lamina-cli` (binary `lamina`), `lamina-llb`, `lamina-client` |
+| Crates | `lamina-lang` (lib), `lamina-cli` (binary `lamina`), `lamina-llb`, `lamina-client`, `lamina-lsp` |
 
 ```text
 .lam  →  (lamina compiler)  →  LLB  →  BuildKit  →  OCI image

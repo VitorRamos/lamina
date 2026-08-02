@@ -1,6 +1,6 @@
 //! Byte offset ↔ LSP position (UTF-16).
 
-use lamina::span::{SourceFile, Span};
+use lamina_lang::span::{SourceFile, Span};
 use tower_lsp::lsp_types::{Position, Range};
 
 /// Convert a UTF-8 byte offset to an LSP Position (0-based line, UTF-16 character).

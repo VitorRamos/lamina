@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/lamina",
+    "crates/lamina-lang",
     "crates/lamina-cli",
     "crates/lamina-llb",
     "crates/lamina-client",
@@ -17,7 +17,7 @@ repository = "https://github.com/VitorRamos/lamina"
 rust-version = "1.74"
 
 [workspace.dependencies]
-lamina = { path = "crates/lamina", version = "1.2.0" }
+lamina-lang = { path = "crates/lamina-lang", version = "1.2.0" }
 lamina-llb = { path = "crates/lamina-llb", version = "1.2.0" }
 lamina-client = { path = "crates/lamina-client", version = "1.2.0" }
 lamina-lsp = { path = "crates/lamina-lsp", version = "1.2.0" }
