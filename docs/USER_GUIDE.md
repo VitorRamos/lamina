@@ -29,6 +29,29 @@ myapp/
   .dockerignore
 ```
 
+CLI commands that take a project path (`check`, `build`, `explain`, …) look for
+`Lamina.toml` in that directory, then in a nested **`.lamina/`** directory.
+So from an application repo root you can keep the Lamina project out of the way:
+
+```text
+myapp/
+  Cargo.toml           # (or go.mod, package.json, …)
+  src/                 # application source
+  .lamina/
+    Lamina.toml
+    src/
+      image.lam
+```
+
+```bash
+# either works when Lamina.toml lives under .lamina/
+lamina check
+lamina check .lamina
+```
+
+If both `./Lamina.toml` and `./.lamina/Lamina.toml` exist, the root file wins.
+Set `[build] context = ".."` in `.lamina/Lamina.toml` when sources live in the parent repo.
+
 ### Lamina.toml
 
 ```toml
