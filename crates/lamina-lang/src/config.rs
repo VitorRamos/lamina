@@ -1,9 +1,41 @@
-//! Lamina.toml loading.
+//! Lamina.toml loading and project root discovery.
 
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+/// Config file name at a project root.
+pub const CONFIG_FILE: &str = "Lamina.toml";
+
+/// Nested project directory tried when the given path has no `Lamina.toml`.
+///
+/// Layout: put the Lamina project under `.lamina/` of an application repo so
+/// `lamina check` / `build` from the repo root still find it.
+pub const NESTED_PROJECT_DIR: &str = ".lamina";
+
+/// Resolve a path argument to the project root directory.
+///
+/// Search order (first match wins):
+/// 1. `path/Lamina.toml` → `path`
+/// 2. `path/.lamina/Lamina.toml` → `path/.lamina`
+/// 3. otherwise `path` unchanged (defaults / missing-config behavior)
+pub fn resolve_project_root(path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    if path.join(CONFIG_FILE).is_file() {
+        return path.to_path_buf();
+    }
+    let nested = path.join(NESTED_PROJECT_DIR);
+    if nested.join(CONFIG_FILE).is_file() {
+        return nested;
+    }
+    path.to_path_buf()
+}
+
+/// Whether `dir` is a Lamina project root (`Lamina.toml` present).
+pub fn is_project_root(dir: impl AsRef<Path>) -> bool {
+    dir.as_ref().join(CONFIG_FILE).is_file()
+}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct LaminaToml {
@@ -126,6 +158,8 @@ impl LaminaToml {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parse_minimal() {
@@ -140,5 +174,43 @@ base = "alpine:3.19"
         let cfg: LaminaToml = toml::from_str(t).unwrap();
         assert_eq!(cfg.package.name, "hello");
         assert_eq!(cfg.params.get("base").unwrap(), "alpine:3.19");
+    }
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lamina-config-{label}-{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn resolve_prefers_root_lamina_toml() {
+        let root = temp_dir("root");
+        fs::write(root.join(CONFIG_FILE), "[package]\nname = \"root\"\n").unwrap();
+        let nested = root.join(NESTED_PROJECT_DIR);
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join(CONFIG_FILE), "[package]\nname = \"nested\"\n").unwrap();
+        assert_eq!(resolve_project_root(&root), root);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_falls_back_to_dot_lamina() {
+        let root = temp_dir("nested-only");
+        let nested = root.join(NESTED_PROJECT_DIR);
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join(CONFIG_FILE), "[package]\nname = \"nested\"\n").unwrap();
+        assert_eq!(resolve_project_root(&root), nested);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_unchanged_when_missing() {
+        let root = temp_dir("missing");
+        assert_eq!(resolve_project_root(&root), root);
+        let _ = fs::remove_dir_all(&root);
     }
 }

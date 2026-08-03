@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Project path discovery: if `Lamina.toml` is missing in the given directory,
+  CLI/LSP also look under **`.lamina/`** (root `Lamina.toml` still wins when both exist).
+
 ## 1.3.0 — 2026-08-02
 
 ### Added

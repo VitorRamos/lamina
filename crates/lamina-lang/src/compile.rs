@@ -125,14 +125,15 @@ pub fn compile_source_in(
 }
 
 pub fn compile_project(root: &Path, opts: &CompileOptions) -> Result<Compiled> {
-    let cfg_path = root.join("Lamina.toml");
+    let root = crate::config::resolve_project_root(root);
+    let cfg_path = root.join(crate::config::CONFIG_FILE);
     let config = crate::config::LaminaToml::load_or_default(&cfg_path).map_err(|e| {
         crate::diag::CompileError::single(
             None,
             crate::diag::DiagnosticMsg::error(e.to_string(), None),
         )
     })?;
-    let entry = config.entry_path(root);
+    let entry = config.entry_path(&root);
     let src = std::fs::read_to_string(&entry).map_err(|e| {
         crate::diag::CompileError::single(
             None,
@@ -142,7 +143,7 @@ pub fn compile_project(root: &Path, opts: &CompileOptions) -> Result<Compiled> {
             ),
         )
     })?;
-    compile_source_in(entry.to_string_lossy().as_ref(), &src, config, opts, root)
+    compile_source_in(entry.to_string_lossy().as_ref(), &src, config, opts, &root)
 }
 
 /// Write `Lamina.lock` for the project based on current `use` graph.
@@ -151,6 +152,8 @@ pub fn write_lockfile(root: &Path, opts: &CompileOptions) -> Result<PathBuf> {
     opts.locked = false;
     opts.run_lints = false;
     let compiled = compile_project(root, &opts)?;
+    // Use the resolved project root (may be `path/.lamina`).
+    let root = &compiled.root;
     let lock = LaminaLock::from_resolved(&compiled.resolved_modules, root);
     let path = root.join(LOCK_FILE_NAME);
     lock.save(&path).map_err(|e| {

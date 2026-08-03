@@ -37,8 +37,10 @@ pub fn find_project_root(file: &Path) -> PathBuf {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     loop {
-        if cur.join("Lamina.toml").is_file() {
-            return cur;
+        // Prefer Lamina.toml in this directory, then `.lamina/Lamina.toml`.
+        let resolved = lamina_lang::config::resolve_project_root(&cur);
+        if lamina_lang::config::is_project_root(&resolved) {
+            return resolved;
         }
         if !cur.pop() {
             break;
@@ -94,7 +96,7 @@ pub fn analyze(path: &Path, source: &str) -> Analysis {
     }
 
     // Optional lints as warnings when project config exists
-    let _ = LaminaToml::load_or_default(root.join("Lamina.toml"));
+    let _ = LaminaToml::load_or_default(root.join(lamina_lang::config::CONFIG_FILE));
 
     analysis
 }

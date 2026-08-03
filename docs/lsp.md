@@ -53,7 +53,7 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.lsp.start({
       name = "lamina-lsp",
       cmd = { "lamina-lsp" },
-      root_dir = vim.fs.root(0, { "Lamina.toml", ".git" }),
+      root_dir = vim.fs.root(0, { "Lamina.toml", ".lamina", ".git" }),
     })
   end,
 })
@@ -67,4 +67,6 @@ Use a generic LSP extension (e.g. “LSP Link” / “vscode-glspc”) pointing 
 
 ## Project root
 
-The server walks parents for `Lamina.toml`; otherwise it uses the file’s directory. Path `use` resolution matches the compiler.
+The server walks parents for `Lamina.toml`, then for `.lamina/Lamina.toml` (same
+order as the CLI). Otherwise it uses the file’s directory. Path `use` resolution
+matches the compiler.

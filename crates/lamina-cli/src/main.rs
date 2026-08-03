@@ -2,11 +2,15 @@
 
 use clap::{Parser, Subcommand};
 use lamina_lang::compile::{compile_project, write_lockfile, CompileOptions};
+use lamina_lang::config::{resolve_project_root, CONFIG_FILE};
 use lamina_lang::lint::LINT_IDS;
 use lamina_llb::{lower, render_internal_dockerfile, summary};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
+
+/// Path to a Lamina project (`Lamina.toml` here, or under `.lamina/`).
+const PATH_HELP: &str = "Project directory (Lamina.toml here or in .lamina/)";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -23,7 +27,7 @@ struct Cli {
 enum Commands {
     /// Typecheck + build IR + lints (no BuildKit daemon).
     Check {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
         #[arg(long = "param", value_name = "KEY=VALUE")]
         params: Vec<String>,
@@ -41,7 +45,7 @@ enum Commands {
     },
     /// Print solve_set / stage DAG summary.
     Explain {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
@@ -52,7 +56,7 @@ enum Commands {
     },
     /// Dump stable LLB op summary (debug).
     EmitLlb {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
@@ -63,7 +67,7 @@ enum Commands {
     },
     /// Lower + solve via Docker Buildx / BuildKit and tag an image.
     Build {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
@@ -90,12 +94,12 @@ enum Commands {
     },
     /// Write/update Lamina.lock for path/stdlib modules.
     Lock {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
     },
     /// Lossy Dockerfile dump for debugging only (NOT a product artifact).
     EmitDockerfile {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
@@ -106,7 +110,7 @@ enum Commands {
     },
     /// Format `.lam` sources (project entry or explicit files).
     Fmt {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", help = PATH_HELP)]
         paths: Vec<PathBuf>,
         #[arg(long)]
         check: bool,
@@ -256,18 +260,19 @@ fn run() -> miette::Result<()> {
             let mut files: Vec<PathBuf> = Vec::new();
             for p in paths {
                 if p.is_dir() {
-                    let cfg = p.join("Lamina.toml");
+                    let root = resolve_project_root(&p);
+                    let cfg = root.join(CONFIG_FILE);
                     let entry = if cfg.exists() {
                         lamina_lang::config::LaminaToml::load(&cfg)
-                            .map(|c| c.entry_path(&p))
-                            .unwrap_or_else(|_| p.join("src/image.lam"))
+                            .map(|c| c.entry_path(&root))
+                            .unwrap_or_else(|_| root.join("src/image.lam"))
                     } else {
-                        p.join("src/image.lam")
+                        root.join("src/image.lam")
                     };
                     if entry.is_file() {
                         files.push(entry);
                     }
-                    let src_dir = p.join("src");
+                    let src_dir = root.join("src");
                     if src_dir.is_dir() {
                         if let Ok(rd) = std::fs::read_dir(src_dir) {
                             for e in rd.flatten() {
