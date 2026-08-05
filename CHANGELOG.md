@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.1 — 2026-08-05
+
 ### Added
 
 - Project path discovery: if `Lamina.toml` is missing in the given directory,
