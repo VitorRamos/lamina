@@ -94,6 +94,7 @@ pub target app = {
 - **`use`** imports `pub fn` from path modules or `std/…`.
 - **Mounts:** `Mount.cache` / `secret` / `ssh` / `bind` with `.run_with(cmd, mounts)`.
 - **Platform:** `.platform("linux/amd64")`.
+- **Lists:** literals `["a", "b"]`; concat with `+` when element types match (`base + more`).
 
 See `docs/grammar.md` and `docs/design.md` for full surface.
 
