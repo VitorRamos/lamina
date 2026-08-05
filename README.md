@@ -10,7 +10,7 @@
 
 ## Status
 
-**1.3.0** — path modules, mounts, lints, multi-platform, lockfile, git remotes, LSP, assignment.
+**1.3.1** — path modules, mounts, lints, multi-platform, lockfile, git remotes, LSP, assignment, `.lamina/` project discovery.
 
 - User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
 - Architecture: [`docs/design.md`](docs/design.md)
