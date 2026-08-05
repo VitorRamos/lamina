@@ -278,11 +278,25 @@ fn check_expr(
             Type::String
         }
         ExprKind::BinaryAdd { left, right } => {
-            let lt = check_expr(left, tenv, fns, None, diags)?;
-            let rt = check_expr(right, tenv, fns, None, diags)?;
+            // Type the left first; use it as the expected type for the right so
+            // empty list literals (`[]`) pick up the left element type when on the right.
+            let lt = check_expr(left, tenv, fns, expected, diags)?;
+            let rt = check_expr(right, tenv, fns, Some(&lt), diags)?;
             match (&lt, &rt) {
                 (Type::String, Type::String) => Type::String,
                 (Type::Int, Type::Int) => Type::Int,
+                (Type::List(a), Type::List(b)) if a == b => Type::List(a.clone()),
+                (Type::List(a), Type::List(b)) => {
+                    diags.push(DiagnosticMsg::error(
+                        format!(
+                            "cannot concatenate List[{}] and List[{}]",
+                            a.as_str(),
+                            b.as_str()
+                        ),
+                        Some(expr.span),
+                    ));
+                    return None;
+                }
                 _ => {
                     diags.push(DiagnosticMsg::error(
                         format!(
