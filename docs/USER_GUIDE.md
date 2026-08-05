@@ -111,7 +111,25 @@ See `docs/grammar.md` and `docs/design.md` for full surface.
 | `lamina emit-dockerfile --target NAME` | **Lossy debug only** |
 | `lamina build --target NAME -t REF` | Build via Buildx |
 | `lamina build --platform a,b --push` | Multi-arch (push required) |
+| `lamina clear [PATH]` | Remove project images + local build cache |
+| `lamina clear --dry-run` | Show what would be removed |
 | `lamina fmt [PATH]` | Format sources |
+
+### Clearing build artifacts
+
+`lamina build` loads images into the local Docker engine and writes a project-local
+BuildKit layer cache under `.lamina/build-cache`. Images are labeled with
+`com.lamina.project` and `com.lamina.project-root` so they can be found later.
+
+```bash
+lamina build --target app -t myapp:dev
+lamina clear                 # remove labeled images, myapp:dev, and .lamina/build-cache
+lamina clear -t myapp:other  # also drop extra tags
+lamina clear --dry-run       # preview
+```
+
+This does **not** wipe the shared Docker/Buildx builder cache used by other
+projects. For a full builder prune: `docker buildx prune`.
 
 ## Lockfile
 

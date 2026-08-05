@@ -17,3 +17,6 @@
 .direnv/
 .env
 .env.*
+
+# Project-local BuildKit cache from `lamina build` (`lamina clear` removes this)
+.lamina/build-cache/

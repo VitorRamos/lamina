@@ -117,6 +117,17 @@ enum Commands {
     },
     /// Start the Language Server (stdio). Same as `lamina-lsp`.
     Lsp,
+    /// Remove local images and project BuildKit cache produced by `lamina build`.
+    Clear {
+        #[arg(default_value = ".", help = PATH_HELP)]
+        path: PathBuf,
+        /// Also remove these image refs (in addition to labeled images and `{name}:dev`)
+        #[arg(short = 't', long = "tag")]
+        tags: Vec<String>,
+        /// Print what would be removed without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -203,7 +214,9 @@ fn run() -> miette::Result<()> {
             let context = compiled.config.context_path(&compiled.root);
             lamina_client::ensure_context(&context).map_err(|e| miette::miette!(e))?;
             let tags = if tags.is_empty() {
-                vec![format!("{}:dev", compiled.config.package.name)]
+                vec![lamina_client::default_image_tag(
+                    &compiled.config.package.name,
+                )]
             } else {
                 tags
             };
@@ -229,12 +242,49 @@ fn run() -> miette::Result<()> {
                 builder,
                 platforms,
                 push,
+                project_root: compiled.root.clone(),
+                package_name: compiled.config.package.name.clone(),
             };
             eprintln!(
                 "note: solve uses an internal BuildKit bridge (ephemeral, not written to the project)."
             );
             lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
             println!("built {}", tags.join(", "));
+        }
+        Commands::Clear {
+            path,
+            tags,
+            dry_run,
+        } => {
+            let root = resolve_project_root(&path);
+            let cfg_path = root.join(CONFIG_FILE);
+            let config = if cfg_path.is_file() {
+                lamina_lang::config::LaminaToml::load(&cfg_path).map_err(|e| miette::miette!(e))?
+            } else {
+                return Err(miette::miette!(
+                    "no {} in {} (or under .lamina/)",
+                    CONFIG_FILE,
+                    path.display()
+                ));
+            };
+            let res = lamina_client::clear(&lamina_client::ClearRequest {
+                project_root: root,
+                package_name: config.package.name.clone(),
+                extra_tags: tags,
+                dry_run,
+            })
+            .map_err(|e| miette::miette!(e))?;
+            let verb = if dry_run { "would remove" } else { "removed" };
+            if res.removed_images.is_empty() && res.removed_cache.is_none() {
+                println!("nothing to clear for package `{}`", config.package.name);
+            } else {
+                for img in &res.removed_images {
+                    println!("{verb} image {img}");
+                }
+                if let Some(cache) = &res.removed_cache {
+                    println!("{verb} build cache {}", cache.display());
+                }
+            }
         }
         Commands::Lock { path } => {
             let mut opts = options(vec![], vec![], vec![]);

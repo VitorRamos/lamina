@@ -4,6 +4,9 @@
 
 ### Added
 
+- **`lamina clear`**: remove local images and project BuildKit cache from
+  `lamina build` (labels `com.lamina.project` / `com.lamina.project-root`,
+  default `{package}:dev`, `.lamina/build-cache`; `--dry-run`, `-t` extras).
 - **List concatenation:** `List[T] + List[T]` (same element type), e.g. `["curl"] + ["jq", "git"]`.
 
 ## 1.3.1 — 2026-08-05
