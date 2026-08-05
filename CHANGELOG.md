@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **List concatenation:** `List[T] + List[T]` (same element type), e.g. `["curl"] + ["jq", "git"]`.
+
 ## 1.3.1 — 2026-08-05
 
 ### Added

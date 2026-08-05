@@ -394,6 +394,10 @@ impl<'a> Evaluator<'a> {
                 match (l, r) {
                     (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                    (Value::List(mut a), Value::List(b)) => {
+                        a.extend(b);
+                        Ok(Value::List(a))
+                    }
                     _ => Err(CompileError::single(
                         Some(self.file),
                         DiagnosticMsg::error("invalid operands for `+`", Some(expr.span)),
@@ -599,5 +603,59 @@ pub target app = {
             .filter(|i| matches!(i, Instr::Run(_)))
             .count();
         assert_eq!(runs, 2, "expected two apk runs from the for loop");
+    }
+
+    #[test]
+    fn list_concat_with_plus() {
+        let src = r#"
+pub target app = {
+  let base = ["curl"];
+  let more = ["jq", "git"];
+  let pkgs = base + more + ["ca-certificates"];
+  let s = Stage.from("alpine:3.19");
+  for pkg in pkgs {
+    s = s.run("apk add --no-cache " + pkg);
+  }
+  s.name("app")
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let ir = evaluate(&f, &m, &EvalInput::default()).expect("eval");
+        let id = *ir.targets.get("app").unwrap();
+        let runs = ir.stages[&id]
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, Instr::Run(_)))
+            .count();
+        // curl + jq + git + ca-certificates
+        assert_eq!(runs, 4, "expected four apk runs after list concat");
+    }
+
+    #[test]
+    fn list_concat_right_empty() {
+        let src = r#"
+const xs: List[Int] = [1, 2] + [];
+pub target app = Stage.from("alpine:3.19").name("app");
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        // Empty `[]` on the right inherits List[Int] from the left via expected type.
+        typecheck(&f, &m).expect("types");
+        evaluate(&f, &m, &EvalInput::default()).expect("eval");
+    }
+
+    #[test]
+    fn list_concat_type_mismatch_rejected() {
+        let src = r#"
+pub target app = {
+  let bad = [1, 2] + ["x"];
+  Stage.from("alpine:3.19").name("app")
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        assert!(typecheck(&f, &m).is_err());
     }
 }

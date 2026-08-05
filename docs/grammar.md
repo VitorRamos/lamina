@@ -63,3 +63,4 @@ TargetDecl   ::= "pub" "target" Ident "=" Expr ";" ;
 
 - Statements end with `;`; block tail expression may omit `;`.
 - `for x in <List[T]> { U }` yields `List[U]`.
+- Operator `+`: `String + String`, `Int + Int`, and **`List[T] + List[T]`** (concatenate; same element type).
