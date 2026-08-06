@@ -10,14 +10,7 @@
 
 ## Status
 
-**1.3.1** — path modules, mounts, lints, multi-platform, lockfile, git remotes, LSP, assignment, `.lamina/` project discovery.
-
-- User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)
-- Architecture: [`docs/design.md`](docs/design.md)
-- Post-1.0 plan: [`docs/post-1.0.md`](docs/post-1.0.md)
-- Agent workflow: [`AGENTS.md`](AGENTS.md)
-- Roadmap: [`docs/roadmap.md`](docs/roadmap.md)
-- Issues: https://github.com/VitorRamos/lamina/issues
+**1.3.x (stable 1.x + post-1.0 features)** — path modules, mounts/secrets, IR lints (`--deny`), multi-platform, `Lamina.lock`, **git remotes**, **LSP**, assignment/`for`/`if`, stdlib recipes, `.lamina/` project discovery.
 
 | | |
 |---|---|
@@ -25,6 +18,22 @@
 | CLI | `lamina` |
 | Config | `Lamina.toml` / `Lamina.lock` |
 | Sources | `*.lam` |
+| License | MIT OR Apache-2.0 |
+
+### Docs
+
+| Topic | Link |
+|-------|------|
+| User guide | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) |
+| Architecture | [`docs/design.md`](docs/design.md) |
+| Remote git modules | [`docs/remote-modules.md`](docs/remote-modules.md) |
+| Language server | [`docs/lsp.md`](docs/lsp.md) |
+| Contributing / PR workflow | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Agent workflow | [`AGENTS.md`](AGENTS.md) |
+| Roadmap | [`docs/roadmap.md`](docs/roadmap.md) |
+| Post-1.0 plan | [`docs/post-1.0.md`](docs/post-1.0.md) |
+| Releases | [`docs/RELEASE.md`](docs/RELEASE.md) |
+| Issues | https://github.com/VitorRamos/lamina/issues |
 
 ## Build from source
 
@@ -38,7 +47,7 @@ cargo run -p lamina-cli -- --version
 cargo test --workspace
 ```
 
-**CI:** every PR and push to `main` must stay green (fmt, clippy, tests, example `lamina check`). See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Release notes: [`docs/RELEASE.md`](docs/RELEASE.md).
+**CI:** every PR and push to `main` must stay green (fmt, clippy, tests, example `lamina check`, `cargo deny`). See [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Releases: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## CLI
 
@@ -67,15 +76,24 @@ cargo run -p lamina-cli -- explain examples/kitchen-sink --target app
 
 ```text
 crates/
-  lamina-lang/  # language library (crates.io; was name-squatted as `lamina`)
-  lamina-cli/   # binary: lamina
-  lamina-llb/
-  lamina-client/
-  lamina-lsp/
+  lamina-lang/    # language library (crates.io name; was name-squatted as `lamina`)
+  lamina-cli/     # binary: lamina
+  lamina-llb/     # IR → LLB summary / lower helpers
+  lamina-client/  # BuildKit / Buildx solve client
+  lamina-lsp/     # language server (also: lamina lsp)
 docs/
   design.md
+  USER_GUIDE.md
+  remote-modules.md
+  lsp.md
   roadmap.md
+  post-1.0.md
+  RELEASE.md
+stdlib/           # std/*.lam recipes (rust, python, golang, node)
+examples/         # hello-static, compose-demo, kitchen-sink, …
 AGENTS.md
+CONTRIBUTING.md
+deny.toml         # cargo-deny (licenses + advisories)
 ```
 
 ## Repository
@@ -83,6 +101,7 @@ AGENTS.md
 - GitHub: https://github.com/VitorRamos/lamina  
 - Clone: `git clone git@github.com:VitorRamos/lamina.git`  
 - Issues: https://github.com/VitorRamos/lamina/issues  
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)  
 - Agent guide: [`AGENTS.md`](AGENTS.md)
 
 ## License

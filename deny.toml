@@ -1,0 +1,59 @@
+# cargo-deny configuration for Lamina.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+#
+# Local:
+#   cargo install cargo-deny --locked
+#   cargo deny check
+#
+# CI fetches the RustSec advisory DB on each run (no vendored DB in-repo).
+# To refresh the local cache: `cargo deny fetch` then `cargo deny check`.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+# Unmaintained / yanked crates: warn so we can plan upgrades without blocking PRs.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+    # Add RUSTSEC-… entries here with a short reason when an advisory is
+    # accepted temporarily (prefer upgrading the dependency instead).
+]
+
+[licenses]
+# Compatible with workspace `license = "MIT OR Apache-2.0"` and common deps.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "0BSD",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[licenses.private]
+ignore = false
+
+[bans]
+# Multiple versions of the same crate are common in a healthy Cargo graph;
+# warn only so deny stays useful without forcing a full dep unify.
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

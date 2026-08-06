@@ -46,3 +46,17 @@ jobs:
               ./target/debug/lamina check "$d"
             fi
           done
+
+  # Dependency policy: licenses, RustSec advisories, unknown sources.
+  # Uses deny.toml at repo root. Advisories DB is fetched by the action each run
+  # (no vendored DB). Locally: `cargo deny fetch && cargo deny check`.
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
