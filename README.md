@@ -10,7 +10,7 @@
 
 ## Status
 
-**1.3.x (stable 1.x + post-1.0 features)** — path modules, mounts/secrets, IR lints (`--deny`), multi-platform, `Lamina.lock`, **git remotes**, **LSP**, assignment/`for`/`if`, stdlib recipes, `.lamina/` project discovery.
+**1.4.0** (stable 1.x + post-1.0 features) — path modules, mounts/secrets, IR lints (`--deny`), multi-platform, `Lamina.lock`, **git remotes**, **LSP**, multiline strings, list concat, `lamina clear`, stdlib recipes, `.lamina/` project discovery.
 
 | | |
 |---|---|

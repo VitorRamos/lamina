@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.4.0 — 2026-08-06
+
 ### Added
 
 - **`lamina clear`**: remove local images and project BuildKit cache from
@@ -15,6 +17,8 @@
 - **Multiline strings:** `"""…"""` (dedent + `${ident}`) and `r"""…"""` (raw).
 - **`.run` / `.run_with`:** accept `List[String]` (joined with newlines) as well as `String`.
 - **Stdlib `rust.lam`:** multi-step recipes use command lists + `set -eux` (not `"a && b"`).
+- CI: `cargo deny` (licenses + RustSec advisories) via `deny.toml`
+- `CONTRIBUTING.md` and refreshed README / Post-1.0 roadmap docs
 
 ### Fixed
 
@@ -22,6 +26,7 @@
   driver** (cache export unsupported); still uses local cache on
   `docker-container` and other export-capable drivers.
 - **`lamina fmt`**: single-method chains stay inline (`s = s.run("…")`).
+- **`lamina fmt`**: expand multi-element lists one item per line.
 
 ## 1.3.1 — 2026-08-05
 
