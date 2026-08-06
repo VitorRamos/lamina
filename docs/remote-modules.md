@@ -6,7 +6,7 @@
 
 | ID | Decision |
 |----|----------|
-| **A1** | Syntax **option A**: `use "git+https://host/repo.git?ref=TAG&path=file.lam";` also `git+ssh://…`, and `git+file://…` (tests/local only) |
+| **A1** | Syntax **option A**: `use "git+https://host/repo.git?ref=TAG&path=file.lam";` also `git+ssh://…`, and `git+file://…` (tests/local only). **Shorthand (GitHub):** `use "github:owner/repo/path.lam[@ref]";` (alias `gh:`; default ref `main`) expands to `git+https://github.com/…` |
 | **A2** | Lock: `spec`, `resolved` (canonical), `sha256` of file bytes, optional `commit`, `kind` (`path` / `std` / `git`) |
 | **A3** | Only `git+https` / `git+ssh` / `git+file` (no bare `http://`). Cache: `LAMINA_MODULE_CACHE` or `~/.cache/lamina/modules`. `LAMINA_OFFLINE=1` or `--locked` with warm content cache: no network. |
 | **A4** | `std/…` stays local/bundled only |
@@ -20,16 +20,32 @@
 ## Syntax
 
 ```lam
+// Full form (any host)
 use "git+https://github.com/acme/images.git?ref=v1.0.0&path=rust/mod.lam";
 use "git+ssh://git@github.com/acme/images.git?ref=main&path=lib.lam";
+
+// GitHub shorthand (same as the first example with ref=main)
+use "github:acme/images/rust/mod.lam";
+use "github:acme/images/rust/mod.lam@v1.0.0";
+use "gh:acme/images/lib.lam@main";   // alias
 ```
 
-Query parameters:
+### Full `git+` form — query parameters
 
 | Param | Required | Meaning |
 |-------|----------|---------|
 | `path` | yes | Path inside the repo to a `.lam` file |
 | `ref` | yes* | Branch, tag, or commit (`*` required for non-file remotes; `git+file` may default to `HEAD`) |
+
+### `github:` / `gh:` shorthand
+
+| Piece | Meaning |
+|-------|---------|
+| `owner/repo` | First two path segments → `https://github.com/owner/repo.git` |
+| rest | Path inside the repo (must end in `.lam`) |
+| `@ref` | Optional branch, tag, or commit; **defaults to `main`** |
+
+Lockfiles always store the **canonical** `git+https://…?ref=&path=` form, so shorthand and full form share one lock entry.
 
 ### Nested deps inside the same repo
 
