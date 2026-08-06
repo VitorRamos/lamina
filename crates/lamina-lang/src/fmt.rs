@@ -225,7 +225,7 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
             }
         }
         out.push('\n');
-        // Blank between consecutive lets is unnecessary; blank before a free expr / tail.
+        // Dense runs of let/assign; blank before a free expression or after last stmt before tail.
         if let Some(next) = block.stmts.get(i + 1) {
             if block_needs_blank(stmt, next) {
                 out.push('\n');
@@ -243,9 +243,14 @@ fn format_block(out: &mut String, block: &Block, indent: usize) {
     out.push('}');
 }
 
+fn is_binding_stmt(s: &BlockStmt) -> bool {
+    matches!(s, BlockStmt::Let(_) | BlockStmt::Assign { .. })
+}
+
 fn block_needs_blank(prev: &BlockStmt, next: &BlockStmt) -> bool {
-    // Keep consecutive `let`s dense; separate lets from free expressions.
-    !matches!((prev, next), (BlockStmt::Let(_), BlockStmt::Let(_)))
+    // Keep consecutive `let` / `name = …` dense (Stage accumulation).
+    // Blank before free expressions (or between expr stmts).
+    !(is_binding_stmt(prev) && is_binding_stmt(next))
 }
 
 fn format_expr(out: &mut String, expr: &Expr, indent: usize) {
@@ -451,6 +456,28 @@ pub target app = {
         assert!(
             out.contains("s.name(\"app\")"),
             "single method on ident stays inline:\n{out}"
+        );
+    }
+
+    #[test]
+    fn fmt_dense_consecutive_assigns() {
+        let src = r#"
+pub target app = {
+  let s = Stage.from("alpine:3.19");
+  s = s.run("one");
+
+  s = s.run("two");
+
+  s = s.run("three");
+  s.name("app")
+};
+"#;
+        let out = format_source("t.lam", src).unwrap();
+        assert!(
+            out.contains(
+                "let s = Stage.from(\"alpine:3.19\");\n  s = s.run(\"one\");\n  s = s.run(\"two\");\n  s = s.run(\"three\");\n\n  s.name(\"app\")"
+            ),
+            "let+assigns should be dense; blank only before tail expr:\n{out}"
         );
     }
 
