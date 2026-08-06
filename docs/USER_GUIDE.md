@@ -128,9 +128,11 @@ See `docs/grammar.md` and `docs/design.md` for full surface.
 
 ### Clearing build artifacts
 
-`lamina build` loads images into the local Docker engine and writes a project-local
-BuildKit layer cache under `.lamina/build-cache`. Images are labeled with
-`com.lamina.project` and `com.lamina.project-root` so they can be found later.
+`lamina build` loads images into the local Docker engine and labels them with
+`com.lamina.project` / `com.lamina.project-root` so `lamina clear` can find them.
+When the Buildx driver supports cache export (e.g. `docker-container`, **not** the
+stock `docker` driver), builds also write a project-local layer cache under
+`.lamina/build-cache`.
 
 ```bash
 lamina build --target app -t myapp:dev

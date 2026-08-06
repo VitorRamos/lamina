@@ -3,9 +3,9 @@
 //! Uses an **internal** ephemeral Dockerfile fed only to `docker buildx build`
 //! so stock Docker/Buildx works without a custom gateway frontend.
 //!
-//! Builds label images and write a project-local layer cache under
-//! `.lamina/build-cache` so `lamina clear` can remove this project's images
-//! and cache without a full builder wipe.
+//! Builds label images for `lamina clear`. When the active Buildx driver
+//! supports cache export (not the stock `docker` driver), builds also write a
+//! project-local layer cache under `.lamina/build-cache`.
 
 use lamina_lang::config::NESTED_PROJECT_DIR;
 use lamina_lang::ir::ModuleIr;
@@ -77,6 +77,32 @@ pub fn default_image_tag(package_name: &str) -> String {
     format!("{package_name}:dev")
 }
 
+/// Whether `docker buildx` for this builder can export a local cache directory.
+///
+/// The stock **`docker` driver** cannot (`Cache export is not supported for the
+/// docker driver`). Drivers like `docker-container` can.
+pub fn builder_supports_cache_export(builder: Option<&str>) -> bool {
+    let mut cmd = Command::new("docker");
+    cmd.args(["buildx", "inspect"]);
+    if let Some(b) = builder {
+        cmd.arg(b);
+    }
+    let out = match cmd.output() {
+        Ok(o) if o.status.success() => o,
+        _ => return false,
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    // `Driver: docker` → no cache export; `docker-container`, `kubernetes`, … → yes.
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("Driver:") {
+            let driver = rest.trim();
+            return driver != "docker" && !driver.is_empty();
+        }
+    }
+    false
+}
+
 pub fn plan(ir: &ModuleIr, targets: &[String]) -> SolveResult {
     let graph = lower(ir, targets);
     SolveResult {
@@ -116,8 +142,11 @@ pub fn solve(ir: &ModuleIr, req: &SolveRequest) -> Result<SolveResult, SolveErro
 
     let root_label = project_root_label(&req.project_root);
     let cache_dir = project_build_cache_dir(&req.project_root);
-    if let Some(parent) = cache_dir.parent() {
-        std::fs::create_dir_all(parent)?;
+    let use_local_cache = builder_supports_cache_export(req.builder.as_deref());
+    if use_local_cache {
+        if let Some(parent) = cache_dir.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
     }
 
     let mut cmd = Command::new("docker");
@@ -136,13 +165,15 @@ pub fn solve(ir: &ModuleIr, req: &SolveRequest) -> Result<SolveResult, SolveErro
     cmd.arg("--label")
         .arg(format!("{LABEL_PROJECT_ROOT}={root_label}"));
 
-    // Project-local layer cache (cleared by `lamina clear`).
-    if cache_dir.is_dir() {
-        cmd.arg("--cache-from")
-            .arg(format!("type=local,src={}", cache_dir.display()));
+    // Project-local layer cache only when the builder can export it (not docker driver).
+    if use_local_cache {
+        if cache_dir.is_dir() {
+            cmd.arg("--cache-from")
+                .arg(format!("type=local,src={}", cache_dir.display()));
+        }
+        cmd.arg("--cache-to")
+            .arg(format!("type=local,dest={},mode=max", cache_dir.display()));
     }
-    cmd.arg("--cache-to")
-        .arg(format!("type=local,dest={},mode=max", cache_dir.display()));
 
     if !req.platforms.is_empty() {
         cmd.arg("--platform").arg(req.platforms.join(","));
@@ -354,6 +385,12 @@ mod tests {
     #[test]
     fn default_tag() {
         assert_eq!(default_image_tag("hello-static"), "hello-static:dev");
+    }
+
+    #[test]
+    fn cache_export_probe_does_not_panic() {
+        // May be true or false depending on the host builder; must not crash.
+        let _ = builder_supports_cache_export(None);
     }
 
     #[test]

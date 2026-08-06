@@ -11,6 +11,12 @@
 - **Stdlib:** `std/rust.lam` (Cargo cache mounts, release/musl build helpers) and
   `std/python.lam` (`pip_install`); examples `stdlib-rust`, `stdlib-python`.
 
+### Fixed
+
+- **`lamina build`**: skip `--cache-to type=local` on the stock Buildx **`docker`
+  driver** (cache export unsupported); still uses local cache on
+  `docker-container` and other export-capable drivers.
+
 ## 1.3.1 — 2026-08-05
 
 ### Added
