@@ -1,0 +1,4 @@
+// Smoke: resolve + typecheck std/python.lam helpers.
+use "std/python.lam";
+
+pub target app = from_version("3.12-slim").run("true").name("app");

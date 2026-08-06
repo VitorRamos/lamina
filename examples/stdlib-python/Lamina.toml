@@ -1,0 +1,3 @@
+[package]
+name = "stdlib-python"
+entry = "src/image.lam"

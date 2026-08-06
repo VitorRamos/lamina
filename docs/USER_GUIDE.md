@@ -96,6 +96,17 @@ pub target app = {
 - **Platform:** `.platform("linux/amd64")`.
 - **Lists:** literals `["a", "b"]`; concat with `+` when element types match (`base + more`).
 
+### Stdlib recipes (`std/…`)
+
+| Module | Import | Highlights |
+|--------|--------|------------|
+| Go | `use "std/golang.lam";` | `from_version`, `with_modules`, `build_release`, `build_with_cache` |
+| Node | `use "std/node.lam";` | `from_version`, `npm_ci`, `npm_ci_with_cache` |
+| Rust | `use "std/rust.lam";` | `from_version`, `cargo_registry_mounts`, `cargo_build_mounts`, `build_release_bin` / `_musl`, `rustup_target` |
+| Python | `use "std/python.lam";` | `from_version`, `pip_install`, `with_app` |
+
+Rust cache mounts intentionally **omit** `registry/src` (concurrent unpack races). Pass a unique `target_id` per parallel build stage to `cargo_build_mounts`. For monorepos that bind-mount sources (instead of `.copy`), use the mount helpers with your own `.run_with` — see `examples/stdlib-rust`.
+
 See `docs/grammar.md` and `docs/design.md` for full surface.
 
 ## CLI

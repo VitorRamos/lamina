@@ -1,0 +1,22 @@
+// Stdlib: minimal Python image helpers.
+// Import with: use "std/python.lam";
+
+/// Official `python` image (`python:3.12`, `python:3.12-slim`, …).
+pub fn from_version(version: String) -> Stage {
+  Stage.from("python:" + version)
+}
+
+/// Copy requirements and `pip install` with a pip download cache mount.
+pub fn pip_install(s: Stage) -> Stage {
+  s.workdir("/app")
+    .copy("requirements.txt", "./")
+    .run_with(
+      "pip install --no-cache-dir -r requirements.txt",
+      [Mount.cache("/root/.cache/pip", "pip-cache")]
+    )
+}
+
+/// Install the app tree after deps (typical second layer).
+pub fn with_app(s: Stage) -> Stage {
+  s.copy(".", ".")
+}
