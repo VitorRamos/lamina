@@ -1,7 +1,8 @@
 //! Pretty-printer for Lamina sources (`lamina fmt`).
 //!
 //! Style (matches hand-written examples like hello-static / kitchen-sink):
-//! - Method chains break one `.method()` per line.
+//! - Multi-method chains break one `.method()` per line; a single call stays inline
+//!   (`s.run("…")`, not `s` + newline + `.run("…")`).
 //! - Dense runs of the same item kind (`use`, `const`, `let`, …).
 //! - Blank line between different kinds / before `fn` and `target`.
 //! - Leading `//` comments preserved; file header gets a blank after comments,
@@ -256,7 +257,10 @@ fn format_expr(out: &mut String, expr: &Expr, indent: usize) {
     format_expr_atom(out, expr, indent);
 }
 
-/// Print `recv.m1(...).m2(...)` with each method on its own indented line.
+/// Print `recv.m1(...).m2(...)`.
+///
+/// - **One** method: keep on one line (`s.run("x")`, `Stage.from("a").run("b")`).
+/// - **Two or more**: break each `.method()` onto its own indented line.
 fn format_method_chain(out: &mut String, expr: &Expr, indent: usize) {
     let mut methods: Vec<(&str, &[Expr])> = Vec::new();
     let mut cur = expr;
@@ -267,10 +271,13 @@ fn format_method_chain(out: &mut String, expr: &Expr, indent: usize) {
     methods.reverse();
 
     format_expr_atom(out, cur, indent);
+    let multiline = methods.len() > 1;
     let cont = "  ".repeat(indent + 1);
     for (method, args) in methods {
-        out.push('\n');
-        out.push_str(&cont);
+        if multiline {
+            out.push('\n');
+            out.push_str(&cont);
+        }
         out.push('.');
         out.push_str(method);
         out.push('(');
@@ -278,7 +285,7 @@ fn format_method_chain(out: &mut String, expr: &Expr, indent: usize) {
             if i > 0 {
                 out.push_str(", ");
             }
-            format_expr(out, a, indent + 1);
+            format_expr(out, a, if multiline { indent + 1 } else { indent });
         }
         out.push(')');
     }
@@ -418,7 +425,32 @@ mod tests {
         assert!(out.contains("pub target app = "));
         assert!(
             out.contains("Stage.from(\"alpine:3.19\")\n  .run(\"true\")\n  .name(\"app\")"),
-            "expected broken chain, got:\n{out}"
+            "expected broken multi-method chain, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn fmt_single_method_stays_inline() {
+        let src = r#"
+pub target app = {
+  let s = Stage.from("alpine:3.19");
+  s = s.run("cargo install --locked trunk");
+  s.name("app")
+};
+"#;
+        let out = format_source("t.lam", src).unwrap();
+        assert!(
+            out.contains("s = s.run(\"cargo install --locked trunk\");"),
+            "single method after assign should stay inline:\n{out}"
+        );
+        assert!(
+            !out.contains("s = s\n"),
+            "should not break before sole .run:\n{out}"
+        );
+        // Stage.from(...).name(...) is one method on a StageFrom atom → inline
+        assert!(
+            out.contains("s.name(\"app\")"),
+            "single method on ident stays inline:\n{out}"
         );
     }
 
