@@ -467,8 +467,11 @@ fn check_method(
         return None;
     }
     match method {
-        "workdir" | "run" | "user" | "name" | "arg" | "healthcheck" | "platform" => {
+        "workdir" | "user" | "name" | "arg" | "healthcheck" | "platform" => {
             expect_ty(&args[0], Type::String, tenv, fns, diags);
+        }
+        "run" => {
+            expect_run_cmd(&args[0], tenv, fns, diags);
         }
         "copy" | "label" => {
             expect_ty(&args[0], Type::String, tenv, fns, diags);
@@ -506,7 +509,7 @@ fn check_method(
             expect_ty(&args[0], Type::Int, tenv, fns, diags);
         }
         "run_with" => {
-            expect_ty(&args[0], Type::String, tenv, fns, diags);
+            expect_run_cmd(&args[0], tenv, fns, diags);
             expect_ty(
                 &args[1],
                 Type::List(Box::new(Type::Mount)),
@@ -518,6 +521,38 @@ fn check_method(
         _ => {}
     }
     Some(Type::Stage)
+}
+
+/// `.run` / `.run_with` command: `String` or `List[String]` (joined with newlines).
+fn expect_run_cmd(
+    expr: &Expr,
+    tenv: &HashMap<String, Type>,
+    fns: &HashMap<String, FnSig>,
+    diags: &mut Vec<DiagnosticMsg>,
+) {
+    // Prefer List[String] when the expr is a list literal so `[]` / mixed check works.
+    let prefer_list = matches!(expr.kind, ExprKind::List(_));
+    let expected = if prefer_list {
+        Some(Type::List(Box::new(Type::String)))
+    } else {
+        None
+    };
+    if let Some(t) = check_expr(expr, tenv, fns, expected.as_ref(), diags) {
+        let ok = match &t {
+            Type::String => true,
+            Type::List(inner) if **inner == Type::String => true,
+            _ => false,
+        };
+        if !ok {
+            diags.push(DiagnosticMsg::error(
+                format!(
+                    "run command expects String or List[String], got {}",
+                    t.as_str()
+                ),
+                Some(expr.span),
+            ));
+        }
+    }
 }
 
 fn expect_ty(

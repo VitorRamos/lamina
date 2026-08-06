@@ -12,6 +12,8 @@
   `std/python.lam` (`pip_install`); examples `stdlib-rust`, `stdlib-python`.
 - **GitHub `use` shorthand:** `github:owner/repo/path.lam[@ref]` (alias `gh:`),
   default ref `main`; expands to `git+https://github.com/…` (stable lock key).
+- **Multiline strings:** `"""…"""` (dedent + `${ident}`) and `r"""…"""` (raw).
+- **`.run` / `.run_with`:** accept `List[String]` (joined with newlines) as well as `String`.
 
 ### Fixed
 

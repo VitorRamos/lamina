@@ -64,3 +64,6 @@ TargetDecl   ::= "pub" "target" Ident "=" Expr ";" ;
 - Statements end with `;`; block tail expression may omit `;`.
 - `for x in <List[T]> { U }` yields `List[U]`.
 - Operator `+`: `String + String`, `Int + Int`, and **`List[T] + List[T]`** (concatenate; same element type).
+- **Strings:** `"…"` single-line (escapes + `${ident}`); `"""…"""` multiline (dedent + interp);
+  `r"""…"""` raw multiline (no escapes/interp — good for shell `${VAR}`).
+- **`.run` / `.run_with`:** first arg is `String` **or** `List[String]` (list joined with newlines into one `RUN`).

@@ -95,6 +95,17 @@ pub target app = {
 - **Mounts:** `Mount.cache` / `secret` / `ssh` / `bind` with `.run_with(cmd, mounts)`.
 - **Platform:** `.platform("linux/amd64")`.
 - **Lists:** literals `["a", "b"]`; concat with `+` when element types match (`base + more`).
+- **Multiline strings:** `"""…"""` (dedented; `${name}` interp) or `r"""…"""` (raw, for shell `${VAR}`).
+- **`.run` scripts:** pass a string, a multiline string, or a list of lines:
+
+```lam
+s.run("""
+  set -eux
+  apk add --no-cache curl
+""")
+s.run(["set -eux", "apk add --no-cache curl"])
+s.run_with(["go mod download", "go build -o /out/app"], [Mount.cache("/go/pkg", "go-pkg")])
+```
 
 ### Stdlib recipes (`std/…`)
 

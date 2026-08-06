@@ -402,6 +402,21 @@ fn format_expr_atom(out: &mut String, expr: &Expr, indent: usize) {
 }
 
 fn write_string(out: &mut String, s: &str) {
+    if s.contains('\n') {
+        // Prefer triple-quoted form so shell scripts stay readable.
+        out.push_str("\"\"\"\n");
+        // Indent body one level relative to surrounding expr when possible;
+        // content is already dedented at lex time — emit as-is + closing on own line.
+        for (i, line) in s.split('\n').enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            // Escape only """ sequences inside body (rare).
+            out.push_str(&line.replace("\"\"\"", "\\\"\\\"\\\""));
+        }
+        out.push_str("\n\"\"\"");
+        return;
+    }
     out.push('"');
     push_escaped(out, s);
     out.push('"');
