@@ -4,6 +4,9 @@
 // Cache mounts intentionally omit `registry/src`. Sharing that tree across
 // concurrent `cargo` invocations races on unpack (`.cargo-ok: File exists`).
 // Give each parallel build stage its own target cache id via `cargo_build_mounts`.
+//
+// Multi-step shell prefers `.run([…])` / `.run_with([…], mounts)` (joined with
+// newlines) plus `set -eux` — not `"a && b && c"` strings.
 
 /// Official `rust` image (`rust:1.80`, `rust:1.80-bookworm`, `rust:1-alpine`, …).
 pub fn from_version(version: String) -> Stage {
@@ -37,7 +40,12 @@ pub fn with_workspace(s: Stage) -> Stage {
 pub fn build_release_bin(s: Stage, bin: String) -> Stage {
   s.copy(".", ".")
     .run_with(
-      "mkdir -p /out && cargo build -r --bin " + bin + " && cp target/release/" + bin + " /out/" + bin,
+      [
+        "set -eux",
+        "mkdir -p /out",
+        "cargo build -r --bin " + bin,
+        "cp target/release/" + bin + " /out/" + bin
+      ],
       cargo_build_mounts("cargo-target-" + bin)
     )
 }
@@ -47,14 +55,24 @@ pub fn build_release_bin(s: Stage, bin: String) -> Stage {
 pub fn build_release_musl(s: Stage, bin: String) -> Stage {
   s.copy(".", ".")
     .run_with(
-      "mkdir -p /out && cargo build -r --bin " + bin + " --target=x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/" + bin + " /out/" + bin,
+      [
+        "set -eux",
+        "mkdir -p /out",
+        "cargo build -r --bin " + bin + " --target=x86_64-unknown-linux-musl",
+        "cp target/x86_64-unknown-linux-musl/release/" + bin + " /out/" + bin
+      ],
       cargo_build_mounts("cargo-target-musl-" + bin)
     )
 }
 
 /// Debian/Ubuntu builder: musl-tools for static linking (no-op useful on alpine rust images).
 pub fn with_musl_tools(s: Stage) -> Stage {
-  s.run("apt-get update && apt-get install -y --no-install-recommends musl-tools musl-dev && rm -rf /var/lib/apt/lists/*")
+  s.run([
+    "set -eux",
+    "apt-get update",
+    "apt-get install -y --no-install-recommends musl-tools musl-dev",
+    "rm -rf /var/lib/apt/lists/*"
+  ])
 }
 
 /// `rustup target add <triple>` (e.g. `wasm32-unknown-unknown`, `x86_64-unknown-linux-musl`).

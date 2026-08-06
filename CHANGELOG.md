@@ -14,6 +14,7 @@
   default ref `main`; expands to `git+https://github.com/…` (stable lock key).
 - **Multiline strings:** `"""…"""` (dedent + `${ident}`) and `r"""…"""` (raw).
 - **`.run` / `.run_with`:** accept `List[String]` (joined with newlines) as well as `String`.
+- **Stdlib `rust.lam`:** multi-step recipes use command lists + `set -eux` (not `"a && b"`).
 
 ### Fixed
 
