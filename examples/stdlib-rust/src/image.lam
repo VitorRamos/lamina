@@ -1,0 +1,13 @@
+// Smoke: resolve + typecheck std/rust.lam helpers (no real Cargo project required).
+use "std/rust.lam";
+
+pub target app = {
+  let s = from_version("1.80-bookworm")
+    .workdir("/src")
+    .run_with("true", cargo_registry_mounts())
+    .run_with("true", cargo_build_mounts("cargo-target-smoke"));
+  // Chain toolchain helpers so they stay typechecked.
+  s = with_musl_tools(s);
+  s = rustup_target(s, "x86_64-unknown-linux-musl");
+  s.name("app")
+};

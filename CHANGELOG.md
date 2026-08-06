@@ -8,6 +8,8 @@
   `lamina build` (labels `com.lamina.project` / `com.lamina.project-root`,
   default `{package}:dev`, `.lamina/build-cache`; `--dry-run`, `-t` extras).
 - **List concatenation:** `List[T] + List[T]` (same element type), e.g. `["curl"] + ["jq", "git"]`.
+- **Stdlib:** `std/rust.lam` (Cargo cache mounts, release/musl build helpers) and
+  `std/python.lam` (`pip_install`); examples `stdlib-rust`, `stdlib-python`.
 
 ## 1.3.1 — 2026-08-05
 
