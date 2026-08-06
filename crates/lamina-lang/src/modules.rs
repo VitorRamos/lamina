@@ -2,7 +2,7 @@
 
 use crate::ast::{FnDecl, Item, Module};
 use crate::diag::{CompileError, DiagnosticMsg, Result};
-use crate::git_remote::{self, parse_git_use};
+use crate::git_remote::{self, parse_remote_use, to_git_plus_spec};
 use crate::lock::{hash_file, ModuleKind, ResolvedModule};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
@@ -251,11 +251,15 @@ fn resolve_use_path(
     from_dir: &Path,
     ctx: &ModuleLoadContext,
 ) -> std::result::Result<(PathBuf, ModuleKind, Option<String>, Option<String>), String> {
-    if spec.starts_with("git+") {
-        let git = parse_git_use(spec)?;
+    // Full form: git+https://…?ref=&path=
+    // Shorthand: github:owner/repo/path.lam[@ref]  (alias: gh:)
+    if spec.starts_with("git+") || spec.starts_with("github:") || spec.starts_with("gh:") {
+        let git = parse_remote_use(spec)?;
         let (path, commit) =
             git_remote::resolve_git_module(&git, ctx.offline, ctx.module_cache.as_deref())?;
-        return Ok((path, ModuleKind::Git, commit, None));
+        // Always lock under the canonical git+ form so github: and git+ share one key.
+        let lock_key = to_git_plus_spec(&git);
+        return Ok((path, ModuleKind::Git, commit, Some(lock_key)));
     }
 
     if let Some(rest) = spec.strip_prefix("std/") {

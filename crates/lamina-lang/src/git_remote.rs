@@ -1,4 +1,4 @@
-//! Git remote `use` resolution (`git+https` / `git+ssh` / `git+file`).
+//! Git remote `use` resolution (`git+https` / `git+ssh` / `git+file` / `github:` / `gh:`).
 
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -14,6 +14,100 @@ pub struct GitUseSpec {
     pub path: String,
     /// Original scheme without git+ (https, ssh, file)
     pub scheme: String,
+}
+
+/// Parse any supported remote `use` form into a [`GitUseSpec`].
+///
+/// Accepted:
+/// - `git+https://…?ref=&path=` / `git+ssh://…` / `git+file://…`
+/// - Shorthand: `github:owner/repo/path/to/file.lam[@ref]`
+/// - Alias: `gh:owner/repo/path…[@ref]` (same as `github:`)
+///
+/// When `@ref` is omitted on the shorthand, **`main`** is used.
+pub fn parse_remote_use(spec: &str) -> std::result::Result<GitUseSpec, String> {
+    if spec.starts_with("github:") || spec.starts_with("gh:") {
+        return parse_github_shorthand(spec);
+    }
+    if spec.starts_with("git+") {
+        return parse_git_use(spec);
+    }
+    Err(format!(
+        "unsupported remote use `{spec}` (use git+https://… or github:owner/repo/path.lam[@ref])"
+    ))
+}
+
+/// `github:owner/repo/path/to/file.lam[@ref]` or `gh:…`
+///
+/// Expands to `git+https://github.com/owner/repo.git?ref=…&path=…`.
+pub fn parse_github_shorthand(spec: &str) -> std::result::Result<GitUseSpec, String> {
+    let rest = spec
+        .strip_prefix("github:")
+        .or_else(|| spec.strip_prefix("gh:"))
+        .ok_or_else(|| "not a github: / gh: use spec".to_string())?;
+
+    if rest.is_empty() {
+        return Err("github: use requires owner/repo/path.lam".into());
+    }
+
+    // Optional @ref at the end (ref itself must not contain '@' for v1).
+    let (body, git_ref) = match rest.rsplit_once('@') {
+        Some((body, r)) if !r.is_empty() && !body.is_empty() => (body, r.to_string()),
+        None => (rest, "main".to_string()),
+        Some(_) => {
+            return Err(
+                "github: use looks like `@ref` is empty; use github:owner/repo/path.lam@ref".into(),
+            );
+        }
+    };
+
+    if body.contains('?') || body.contains('#') {
+        return Err("github: shorthand does not take ?query; use @ref for the branch/tag".into());
+    }
+
+    let parts: Vec<&str> = body.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.len() < 3 {
+        return Err(
+            "github: use needs owner/repo/path.lam (e.g. github:org/repo/stdlib/rust.lam)".into(),
+        );
+    }
+    let owner = parts[0];
+    let repo = parts[1].trim_end_matches(".git");
+    let path = parts[2..].join("/");
+    if path.contains("..") {
+        return Err("github: path must not contain '..'".into());
+    }
+    if !path.ends_with(".lam") {
+        return Err(format!("github: path must end with .lam (got `{path}`)"));
+    }
+    if owner.contains(':') || repo.contains(':') {
+        return Err("invalid github: owner/repo".into());
+    }
+
+    Ok(GitUseSpec {
+        url: format!("https://github.com/{owner}/{repo}.git"),
+        git_ref,
+        path,
+        scheme: "https".into(),
+    })
+}
+
+/// Canonical `git+https://…?ref=&path=` form (stable lock keys / nested rewrites).
+pub fn to_git_plus_spec(g: &GitUseSpec) -> String {
+    match g.scheme.as_str() {
+        "https" => {
+            let body = g.url.strip_prefix("https://").unwrap_or(&g.url);
+            format!("git+https://{body}?ref={}&path={}", g.git_ref, g.path)
+        }
+        "ssh" => {
+            let body = g.url.strip_prefix("ssh://").unwrap_or(&g.url);
+            format!("git+ssh://{body}?ref={}&path={}", g.git_ref, g.path)
+        }
+        "file" => {
+            let p = g.url.trim_start_matches('/');
+            format!("git+file://{p}?ref={}&path={}", g.git_ref, g.path)
+        }
+        other => format!("git+{other}://{}?ref={}&path={}", g.url, g.git_ref, g.path),
+    }
 }
 
 /// Parse `git+https://…?ref=&path=` / `git+ssh://…` / `git+file://…`.
@@ -361,5 +455,32 @@ mod tests {
     #[test]
     fn require_path() {
         assert!(parse_git_use("git+https://example.com/r.git?ref=main").is_err());
+    }
+
+    #[test]
+    fn parse_github_shorthand_default_main() {
+        let g = parse_remote_use("github:VitorRamos/lamina/stdlib/rust.lam").unwrap();
+        assert_eq!(g.url, "https://github.com/VitorRamos/lamina.git");
+        assert_eq!(g.git_ref, "main");
+        assert_eq!(g.path, "stdlib/rust.lam");
+        assert_eq!(g.scheme, "https");
+        assert_eq!(
+            to_git_plus_spec(&g),
+            "git+https://github.com/VitorRamos/lamina.git?ref=main&path=stdlib/rust.lam"
+        );
+    }
+
+    #[test]
+    fn parse_gh_shorthand_with_ref() {
+        let g = parse_remote_use("gh:acme/imgs/rust/mod.lam@v1.2.0").unwrap();
+        assert_eq!(g.url, "https://github.com/acme/imgs.git");
+        assert_eq!(g.git_ref, "v1.2.0");
+        assert_eq!(g.path, "rust/mod.lam");
+    }
+
+    #[test]
+    fn github_shorthand_needs_path() {
+        assert!(parse_remote_use("github:org/repo").is_err());
+        assert!(parse_remote_use("github:org/repo@main").is_err());
     }
 }

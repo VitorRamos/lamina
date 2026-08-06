@@ -160,11 +160,16 @@ Commit `Lamina.lock` for CI reproducibility of path/stdlib/**git** modules.
 Syntax (see also [`remote-modules.md`](remote-modules.md)):
 
 ```lam
+// Full form
 use "git+https://github.com/acme/images.git?ref=v1.0.0&path=rust/mod.lam";
+// GitHub shorthand (default ref = main)
+use "github:VitorRamos/lamina/stdlib/rust.lam";
+use "github:VitorRamos/lamina/stdlib/rust.lam@v1.3.1";
 ```
 
 - **Schemes:** `git+https://`, `git+ssh://`, `git+file://` (local tests)
-- **Required query:** `ref=…`, `path=…` (to a `.lam` file)
+- **GitHub shorthand:** `github:owner/repo/path.lam[@ref]` (alias `gh:`)
+- **Required (full form):** query `ref=…`, `path=…` (to a `.lam` file)
 - **Cache:** `LAMINA_MODULE_CACHE` or `~/.cache/lamina/modules`
 - **Offline:** `LAMINA_OFFLINE=1` uses existing cache only (no `git clone`)
 
