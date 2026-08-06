@@ -10,9 +10,6 @@
 - **List concatenation:** `List[T] + List[T]` (same element type), e.g. `["curl"] + ["jq", "git"]`.
 - **Stdlib:** `std/rust.lam` (Cargo cache mounts, release/musl build helpers) and
   `std/python.lam` (`pip_install`); examples `stdlib-rust`, `stdlib-python`.
-
-### Added
-
 - **GitHub `use` shorthand:** `github:owner/repo/path.lam[@ref]` (alias `gh:`),
   default ref `main`; expands to `git+https://github.com/…` (stable lock key).
 
