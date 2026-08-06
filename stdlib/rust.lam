@@ -7,8 +7,8 @@
 //
 // Multi-step shell prefers `.run([…])` / `.run_with([…], mounts)` (joined with
 // newlines) plus `set -eux` — not `"a && b && c"` strings.
-
 /// Official `rust` image (`rust:1.80`, `rust:1.80-bookworm`, `rust:1-alpine`, …).
+
 pub fn from_version(version: String) -> Stage {
   Stage.from("rust:" + version)
 }
@@ -18,16 +18,14 @@ pub fn cargo_registry_mounts() -> List[Mount] {
   [
     Mount.cache("/usr/local/cargo/registry/index", "cargo-registry-index"),
     Mount.cache("/usr/local/cargo/registry/cache", "cargo-registry-cache"),
-    Mount.cache("/usr/local/cargo/git/db", "cargo-git-db")
+    Mount.cache("/usr/local/cargo/git/db", "cargo-git-db"),
   ]
 }
 
 /// Registry caches plus a **per-stage** `target/` cache (`target_id` must be unique
 /// if stages build concurrently, e.g. `"cargo-target-backend"`).
 pub fn cargo_build_mounts(target_id: String) -> List[Mount] {
-  cargo_registry_mounts() + [
-    Mount.cache("/src/target", target_id)
-  ]
+  cargo_registry_mounts() + [Mount.cache("/src/target", target_id)]
 }
 
 /// Default workspace layout under `/src`.
@@ -38,31 +36,27 @@ pub fn with_workspace(s: Stage) -> Stage {
 /// Copy the whole context then `cargo build -r --bin <bin>` → `/out/<bin>` with caches.
 /// Prefer bind mounts in app `.lam` files when the monorepo is large (see USER_GUIDE).
 pub fn build_release_bin(s: Stage, bin: String) -> Stage {
-  s.copy(".", ".")
-    .run_with(
-      [
-        "set -eux",
-        "mkdir -p /out",
-        "cargo build -r --bin " + bin,
-        "cp target/release/" + bin + " /out/" + bin
-      ],
-      cargo_build_mounts("cargo-target-" + bin)
-    )
+  s
+    .copy(".", ".")
+    .run_with([
+      "set -eux",
+      "mkdir -p /out",
+      "cargo build -r --bin " + bin,
+      "cp target/release/" + bin + " /out/" + bin,
+    ], cargo_build_mounts("cargo-target-" + bin))
 }
 
 /// Static musl binary: `x86_64-unknown-linux-musl` → `/out/<bin>`.
 /// Call `with_musl_tools` + `rustup_target(..., "x86_64-unknown-linux-musl")` on the toolchain stage first.
 pub fn build_release_musl(s: Stage, bin: String) -> Stage {
-  s.copy(".", ".")
-    .run_with(
-      [
-        "set -eux",
-        "mkdir -p /out",
-        "cargo build -r --bin " + bin + " --target=x86_64-unknown-linux-musl",
-        "cp target/x86_64-unknown-linux-musl/release/" + bin + " /out/" + bin
-      ],
-      cargo_build_mounts("cargo-target-musl-" + bin)
-    )
+  s
+    .copy(".", ".")
+    .run_with([
+      "set -eux",
+      "mkdir -p /out",
+      "cargo build -r --bin " + bin + " --target=x86_64-unknown-linux-musl",
+      "cp target/x86_64-unknown-linux-musl/release/" + bin + " /out/" + bin,
+    ], cargo_build_mounts("cargo-target-musl-" + bin))
 }
 
 /// Debian/Ubuntu builder: musl-tools for static linking (no-op useful on alpine rust images).
@@ -71,7 +65,7 @@ pub fn with_musl_tools(s: Stage) -> Stage {
     "set -eux",
     "apt-get update",
     "apt-get install -y --no-install-recommends musl-tools musl-dev",
-    "rm -rf /var/lib/apt/lists/*"
+    "rm -rf /var/lib/apt/lists/*",
   ])
 }
 
