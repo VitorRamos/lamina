@@ -317,14 +317,7 @@ fn format_expr_atom(out: &mut String, expr: &Expr, indent: usize) {
         ExprKind::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         ExprKind::Ident(n) => out.push_str(n),
         ExprKind::List(els) => {
-            out.push('[');
-            for (i, e) in els.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                format_expr(out, e, indent);
-            }
-            out.push(']');
+            format_list(out, els, indent);
         }
         ExprKind::Call { callee, args } => {
             out.push_str(callee);
@@ -401,6 +394,45 @@ fn format_expr_atom(out: &mut String, expr: &Expr, indent: usize) {
     }
 }
 
+/// Format a list literal.
+///
+/// - Empty / single simple element: inline `[…]` / `[x]`
+/// - Two or more elements (or nested/complex): one element per line, trailing commas
+///
+/// This keeps `.run([…])` / mount lists readable instead of one long line.
+fn format_list(out: &mut String, els: &[Expr], indent: usize) {
+    if els.is_empty() {
+        out.push_str("[]");
+        return;
+    }
+    let multiline = els.len() > 1 || els.iter().any(expr_prefers_multiline);
+    if !multiline {
+        out.push('[');
+        format_expr(out, &els[0], indent);
+        out.push(']');
+        return;
+    }
+    out.push_str("[\n");
+    let ind = "  ".repeat(indent + 1);
+    for e in els {
+        out.push_str(&ind);
+        format_expr(out, e, indent + 1);
+        out.push_str(",\n");
+    }
+    out.push_str(&"  ".repeat(indent));
+    out.push(']');
+}
+
+fn expr_prefers_multiline(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::List(els) => els.len() > 1 || els.iter().any(expr_prefers_multiline),
+        ExprKind::Method { .. } => true,
+        ExprKind::String(s) => s.contains('\n'),
+        ExprKind::Block(_) | ExprKind::For { .. } | ExprKind::If { .. } => true,
+        _ => false,
+    }
+}
+
 fn write_string(out: &mut String, s: &str) {
     if s.contains('\n') {
         // Prefer triple-quoted form so shell scripts stay readable.
@@ -472,6 +504,22 @@ pub target app = {
             out.contains("s.name(\"app\")"),
             "single method on ident stays inline:\n{out}"
         );
+    }
+
+    #[test]
+    fn fmt_run_list_one_command_per_line() {
+        let src = r#"
+pub target app = Stage.from("alpine:3.19")
+  .run(["set -eux", "apk add curl", "true"])
+  .name("app");
+"#;
+        let out = format_source("t.lam", src).unwrap();
+        assert!(
+            out.contains(".run([\n    \"set -eux\",\n    \"apk add curl\",\n    \"true\",\n  ])"),
+            "run list should expand one element per line:\n{out}"
+        );
+        let out2 = format_source("t.lam", &out).unwrap();
+        assert_eq!(out, out2, "not idempotent:\n{out}");
     }
 
     #[test]
