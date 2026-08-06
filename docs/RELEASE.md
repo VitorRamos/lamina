@@ -8,8 +8,23 @@ Every **pull request** and every push to **`main`** runs [`.github/workflows/ci.
 - `cargo clippy -D warnings`
 - `cargo test --workspace`
 - `lamina check` on each `examples/*` project
+- `cargo deny check` (licenses + RustSec advisories; config in [`deny.toml`](../deny.toml))
 
 No Docker/BuildKit is required for CI. Green checks are expected before merge.
+
+### Dependency advisories
+
+CI uses [EmbarkStudios/cargo-deny-action](https://github.com/EmbarkStudios/cargo-deny-action), which **fetches the RustSec advisory database on each run** (nothing vendored in-repo).
+
+Locally:
+
+```bash
+cargo install cargo-deny --locked
+cargo deny fetch    # refresh advisory DB under $CARGO_HOME
+cargo deny check
+```
+
+To temporarily accept an advisory, add an entry under `[advisories].ignore` in `deny.toml` with a short reason, and prefer upgrading the dependency in a follow-up.
 
 ## Versioning
 

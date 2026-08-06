@@ -80,15 +80,26 @@ scaffold ─┬► diagnostics ─┬► lexer ──┐
 
 ## Post-1.0
 
-Overview: [`post-1.0.md`](post-1.0.md).
+Overview: [`post-1.0.md`](post-1.0.md). Workspace is **1.3.x**; open work below is optional beyond 1.0.
 
 | Issue | Theme | Ready? | Notes |
 |-------|--------|--------|--------|
-| [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **shipped (1.1)** | See `docs/remote-modules.md` |
+| [#27](https://github.com/VitorRamos/lamina/issues/27) | Remote modules (git + lock) | **shipped (1.1)** | `docs/remote-modules.md` |
 | [#28](https://github.com/VitorRamos/lamina/issues/28) | LSP MVP (diagnostics, hover, goto) | **shipped (1.2)** | `lamina lsp` / `docs/lsp.md` |
+| [#45](https://github.com/VitorRamos/lamina/issues/45) | CI: cargo-deny / advisories | **shipped** | `deny.toml` + CI job |
+| [#47](https://github.com/VitorRamos/lamina/issues/47) | CONTRIBUTING + release checklist | **shipped** | `CONTRIBUTING.md` |
+| [#48](https://github.com/VitorRamos/lamina/issues/48) | README status / features matrix | **shipped** | match 1.x + remotes/LSP |
+| [#57](https://github.com/VitorRamos/lamina/issues/57) | Update roadmap / post-1.0 map | **shipped** | this file + `post-1.0.md` |
+| [#44](https://github.com/VitorRamos/lamina/issues/44) | Buildx integration tests + optional CI | **agent-ready** | `#[ignore]` by default |
+| [#53](https://github.com/VitorRamos/lamina/issues/53) | Modules: no transitive re-export via `use` | **agent-ready** | visibility fix |
+| [#49](https://github.com/VitorRamos/lamina/issues/49) | VS Code extension for Lamina LSP | **agent-ready** | editor track |
+| [#50](https://github.com/VitorRamos/lamina/issues/50) | LSP polish (tokens, rename, symbols) | **agent-ready** | after #49 helpful |
+| [#51](https://github.com/VitorRamos/lamina/issues/51) | True `pb.Definition` emission | **agent-ready** | demote Dockerfile solve bridge |
 | [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | true `buildx -f` |
+| [#54](https://github.com/VitorRamos/lamina/issues/54) | Richer pure string ops | **needs-design** | design PR first |
+| [#55](https://github.com/VitorRamos/lamina/issues/55) | Multi-target `lamina build` | **needs-decision** | product choice |
 
-**Suggested order:** #28 ∥ #25 (remotes done in 1.1).
+**Suggested order:** small CI/docs (#45–#48, #57) → #53 / #44 → editor (#49 → #50) → LLB (#51) → gateway (#25). Parallel OK when crates do not collide.
 
 ## How agents should use this
 
