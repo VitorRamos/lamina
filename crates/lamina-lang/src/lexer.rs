@@ -237,7 +237,15 @@ impl<'a> Lexer<'a> {
                 Some(self.span(start, self.pos)),
             ));
         }
-        self.bump(); // "
+        self.bump(); // first "
+                     // Triple-quoted multiline: """ … """ or r""" … """
+        let triple = self.peek() == Some(b'"') && self.src.get(self.pos + 1) == Some(&b'"');
+        if triple {
+            self.bump(); // second "
+            self.bump(); // third "
+            return self.string_triple(start, raw);
+        }
+
         if raw {
             let mut lit = String::new();
             while let Some(c) = self.peek() {
@@ -245,6 +253,12 @@ impl<'a> Lexer<'a> {
                     self.bump();
                     self.push(TokenKind::String(lit), start);
                     return Ok(());
+                }
+                if c == b'\n' {
+                    return Err(DiagnosticMsg::error(
+                        "newline in single-line raw string; use r\"\"\"…\"\"\" for multiline",
+                        Some(self.span(start, self.pos)),
+                    ));
                 }
                 lit.push(c as char);
                 self.bump();
@@ -285,6 +299,12 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::String(s), start);
                     }
                     return Ok(());
+                }
+                b'\n' => {
+                    return Err(DiagnosticMsg::error(
+                        "newline in single-line string; use \"\"\"…\"\"\" for multiline",
+                        Some(self.span(start, self.pos)),
+                    ));
                 }
                 b'\\' => {
                     self.bump();
@@ -341,6 +361,220 @@ impl<'a> Lexer<'a> {
             Some(self.span(start, self.pos)),
         ))
     }
+
+    /// `"""…"""` or `r"""…"""` — multiline with common-indent strip.
+    fn string_triple(&mut self, start: usize, raw: bool) -> std::result::Result<(), DiagnosticMsg> {
+        if raw {
+            let mut lit = String::new();
+            while self.pos < self.src.len() {
+                if self.peek() == Some(b'"')
+                    && self.src.get(self.pos + 1) == Some(&b'"')
+                    && self.src.get(self.pos + 2) == Some(&b'"')
+                {
+                    self.bump();
+                    self.bump();
+                    self.bump();
+                    let lit = dedent_multiline(&lit);
+                    self.push(TokenKind::String(lit), start);
+                    return Ok(());
+                }
+                lit.push(self.bump().unwrap() as char);
+            }
+            return Err(DiagnosticMsg::error(
+                "unterminated raw multiline string (r\"\"\")",
+                Some(self.span(start, self.pos)),
+            ));
+        }
+
+        let mut parts: Vec<StrPart> = Vec::new();
+        let mut buf = String::new();
+        let mut has_interp = false;
+
+        while self.pos < self.src.len() {
+            // Closing """
+            if self.peek() == Some(b'"')
+                && self.src.get(self.pos + 1) == Some(&b'"')
+                && self.src.get(self.pos + 2) == Some(&b'"')
+            {
+                self.bump();
+                self.bump();
+                self.bump();
+                if !buf.is_empty() || parts.is_empty() {
+                    parts.push(StrPart::Lit(std::mem::take(&mut buf)));
+                }
+                if has_interp {
+                    let mut parts = dedent_interp_parts(parts);
+                    if parts
+                        .last()
+                        .map(|p| matches!(p, StrPart::Lit(s) if s.is_empty()))
+                        .unwrap_or(false)
+                        && parts.len() > 1
+                    {
+                        parts.pop();
+                    }
+                    self.push(TokenKind::StringInterp(parts), start);
+                } else {
+                    let s = match parts.into_iter().next() {
+                        Some(StrPart::Lit(s)) => dedent_multiline(&s),
+                        _ => String::new(),
+                    };
+                    self.push(TokenKind::String(s), start);
+                }
+                return Ok(());
+            }
+
+            let c = self.peek().unwrap();
+            match c {
+                b'\\' => {
+                    self.bump();
+                    let esc = self.bump().ok_or_else(|| {
+                        DiagnosticMsg::error(
+                            "unterminated string escape",
+                            Some(self.span(start, self.pos)),
+                        )
+                    })?;
+                    let ch = match esc {
+                        b'n' => '\n',
+                        b't' => '\t',
+                        b'\\' => '\\',
+                        b'"' => '"',
+                        b'$' => '$',
+                        other => other as char,
+                    };
+                    buf.push(ch);
+                }
+                b'$' if self.src.get(self.pos + 1) == Some(&b'{') => {
+                    has_interp = true;
+                    if !buf.is_empty() {
+                        parts.push(StrPart::Lit(std::mem::take(&mut buf)));
+                    }
+                    self.bump(); // $
+                    self.bump(); // {
+                    let id_start = self.pos;
+                    while matches!(
+                        self.peek(),
+                        Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_')
+                    ) {
+                        self.bump();
+                    }
+                    if self.peek() != Some(b'}') {
+                        return Err(DiagnosticMsg::error(
+                            "expected `}` after interpolation",
+                            Some(self.span(id_start, self.pos)),
+                        ));
+                    }
+                    let name = std::str::from_utf8(&self.src[id_start..self.pos])
+                        .unwrap()
+                        .to_string();
+                    self.bump(); // }
+                    parts.push(StrPart::Ident(name));
+                }
+                _ => {
+                    buf.push(c as char);
+                    self.bump();
+                }
+            }
+        }
+        Err(DiagnosticMsg::error(
+            "unterminated multiline string (\"\"\")",
+            Some(self.span(start, self.pos)),
+        ))
+    }
+}
+
+/// Strip a leading newline and common leading indentation (spaces only).
+pub fn dedent_multiline(s: &str) -> String {
+    let s = s.strip_prefix('\n').unwrap_or(s);
+    // Drop a single trailing newline that only exists so `"""` can sit on its own line.
+    let s = s.strip_suffix('\n').unwrap_or(s);
+
+    let lines: Vec<&str> = s.split('\n').collect();
+    let min_indent = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take_while(|c| *c == ' ').count())
+        .min()
+        .unwrap_or(0);
+
+    lines
+        .iter()
+        .map(|l| {
+            if l.trim().is_empty() {
+                ""
+            } else if l.len() >= min_indent && l.as_bytes()[..min_indent].iter().all(|&b| b == b' ')
+            {
+                &l[min_indent..]
+            } else {
+                *l
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn reconstruct_for_dedent(parts: &[StrPart]) -> String {
+    let mut s = String::new();
+    for p in parts {
+        match p {
+            StrPart::Lit(t) => s.push_str(t),
+            StrPart::Ident(n) => {
+                s.push_str("${");
+                s.push_str(n);
+                s.push('}');
+            }
+        }
+    }
+    s
+}
+
+/// Dedent multiline content that contains `${…}` by computing indent from the
+/// full reconstructed text, then stripping that many spaces from each line of
+/// each literal part (idents unchanged).
+fn dedent_interp_parts(parts: Vec<StrPart>) -> Vec<StrPart> {
+    let full = reconstruct_for_dedent(&parts);
+    let dedented = dedent_multiline(&full);
+    // If lengths of non-interp structure diverge, fall back to per-lit dedent.
+    if !full.contains("${") {
+        return vec![StrPart::Lit(dedented)];
+    }
+    // Apply same min-indent to each line of each lit segment independently using
+    // global min indent from full text.
+    let body = full.strip_prefix('\n').unwrap_or(full.as_str());
+    let body = body.strip_suffix('\n').unwrap_or(body);
+    let min_indent = body
+        .split('\n')
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take_while(|c| *c == ' ').count())
+        .min()
+        .unwrap_or(0);
+
+    parts
+        .into_iter()
+        .map(|p| match p {
+            StrPart::Ident(n) => StrPart::Ident(n),
+            StrPart::Lit(lit) => {
+                let stripped = lit
+                    .split('\n')
+                    .map(|l| {
+                        if l.trim().is_empty() {
+                            ""
+                        } else if l.len() >= min_indent
+                            && l.as_bytes()[..min_indent].iter().all(|&b| b == b' ')
+                        {
+                            &l[min_indent..]
+                        } else {
+                            l
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                // Also strip one leading newline from the first lit if present
+                // (already handled by global strip on full; per-part first lit
+                // may still start with \n).
+                StrPart::Lit(stripped)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -368,5 +602,30 @@ mod tests {
             }
             other => panic!("expected interp, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn multiline_dedent() {
+        let src = "\"\"\"\n  set -eux\n  echo hi\n\"\"\"";
+        let toks = lex(&file(src)).unwrap();
+        match &toks[0].kind {
+            TokenKind::String(s) => assert_eq!(s, "set -eux\necho hi"),
+            other => panic!("expected string, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn raw_multiline_keeps_dollar() {
+        let src = "r\"\"\"\n  echo ${SHELL}\n\"\"\"";
+        let toks = lex(&file(src)).unwrap();
+        match &toks[0].kind {
+            TokenKind::String(s) => assert_eq!(s, "echo ${SHELL}"),
+            other => panic!("expected string, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dedent_helper() {
+        assert_eq!(dedent_multiline("\n  a\n  b\n"), "a\nb");
     }
 }

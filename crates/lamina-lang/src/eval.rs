@@ -463,7 +463,7 @@ impl<'a> Evaluator<'a> {
         }
         let instr = match method {
             "workdir" => Instr::Workdir(req_str(&vals, 0, expr, self.file)?),
-            "run" => Instr::Run(req_str(&vals, 0, expr, self.file)?),
+            "run" => Instr::Run(req_run_cmd(&vals, 0, expr, self.file)?),
             "copy" => Instr::Copy {
                 src: req_str(&vals, 0, expr, self.file)?,
                 dst: req_str(&vals, 1, expr, self.file)?,
@@ -506,7 +506,7 @@ impl<'a> Evaluator<'a> {
             "healthcheck" => Instr::Healthcheck(req_str(&vals, 0, expr, self.file)?),
             "platform" => Instr::Platform(req_str(&vals, 0, expr, self.file)?),
             "run_with" => Instr::RunWith {
-                cmd: req_str(&vals, 0, expr, self.file)?,
+                cmd: req_run_cmd(&vals, 0, expr, self.file)?,
                 mounts: vals.get(1).and_then(|v| v.as_list_mount()).ok_or_else(|| {
                     CompileError::single(
                         Some(self.file),
@@ -535,6 +535,39 @@ fn req_str(vals: &[Value], i: usize, expr: &Expr, file: &SourceFile) -> Result<S
                 DiagnosticMsg::error("expected String argument", Some(expr.span)),
             )
         })
+}
+
+/// `.run` / `.run_with` first arg: `String` or `List[String]` (joined with `\n`).
+fn req_run_cmd(vals: &[Value], i: usize, expr: &Expr, file: &SourceFile) -> Result<String> {
+    let Some(v) = vals.get(i) else {
+        return Err(CompileError::single(
+            Some(file),
+            DiagnosticMsg::error("expected String or List[String] command", Some(expr.span)),
+        ));
+    };
+    match v {
+        Value::String(s) => Ok(s.clone()),
+        Value::List(xs) => {
+            let mut lines = Vec::with_capacity(xs.len());
+            for x in xs {
+                let Some(s) = x.as_string() else {
+                    return Err(CompileError::single(
+                        Some(file),
+                        DiagnosticMsg::error(
+                            "run command list elements must be String",
+                            Some(expr.span),
+                        ),
+                    ));
+                };
+                lines.push(s.to_string());
+            }
+            Ok(lines.join("\n"))
+        }
+        _ => Err(CompileError::single(
+            Some(file),
+            DiagnosticMsg::error("expected String or List[String] command", Some(expr.span)),
+        )),
+    }
 }
 
 fn req_list_str(vals: &[Value], i: usize, expr: &Expr, file: &SourceFile) -> Result<Vec<String>> {
@@ -657,5 +690,47 @@ pub target app = {
         let f = SourceFile::new(FileId(0), "t.lam", src);
         let m = parse(&f).expect("parse");
         assert!(typecheck(&f, &m).is_err());
+    }
+
+    #[test]
+    fn run_accepts_command_list() {
+        let src = r#"
+pub target app = Stage.from("alpine:3.19")
+  .run(["set -eux", "echo hi", "true"])
+  .name("app");
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let ir = evaluate(&f, &m, &EvalInput::default()).expect("eval");
+        let id = *ir.targets.get("app").unwrap();
+        let run = ir.stages[&id]
+            .instrs
+            .iter()
+            .find_map(|i| match i {
+                Instr::Run(c) => Some(c.as_str()),
+                _ => None,
+            })
+            .expect("run");
+        assert_eq!(run, "set -eux\necho hi\ntrue");
+    }
+
+    #[test]
+    fn run_multiline_string() {
+        let src = "pub target app = Stage.from(\"alpine:3.19\").run(\"\"\"\n  set -eux\n  true\n\"\"\").name(\"app\");\n";
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let ir = evaluate(&f, &m, &EvalInput::default()).expect("eval");
+        let id = *ir.targets.get("app").unwrap();
+        let run = ir.stages[&id]
+            .instrs
+            .iter()
+            .find_map(|i| match i {
+                Instr::Run(c) => Some(c.as_str()),
+                _ => None,
+            })
+            .expect("run");
+        assert_eq!(run, "set -eux\ntrue");
     }
 }
