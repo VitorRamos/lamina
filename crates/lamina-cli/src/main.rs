@@ -1,5 +1,7 @@
 //! `lamina` CLI.
 
+mod build_targets;
+
 use clap::{Parser, Subcommand};
 use lamina_lang::compile::{compile_project, write_lockfile, CompileOptions};
 use lamina_lang::config::{resolve_project_root, CONFIG_FILE};
@@ -49,6 +51,9 @@ enum Commands {
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
+        /// All `pub target`s (same as omitting `--target` for explain).
+        #[arg(long = "all-targets")]
+        all_targets: bool,
         #[arg(long = "param", value_name = "KEY=VALUE")]
         params: Vec<String>,
         #[arg(long = "build-arg", value_name = "KEY=VALUE")]
@@ -60,6 +65,8 @@ enum Commands {
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
+        #[arg(long = "all-targets")]
+        all_targets: bool,
         #[arg(long = "param", value_name = "KEY=VALUE")]
         params: Vec<String>,
         #[arg(long = "build-arg", value_name = "KEY=VALUE")]
@@ -71,6 +78,9 @@ enum Commands {
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
+        /// Build every `pub target` (sequential solves; default tags `{package}:{target}`).
+        #[arg(long = "all-targets")]
+        all_targets: bool,
         #[arg(short = 't', long = "tag")]
         tags: Vec<String>,
         #[arg(long = "param", value_name = "KEY=VALUE")]
@@ -103,6 +113,8 @@ enum Commands {
         path: PathBuf,
         #[arg(long)]
         target: Vec<String>,
+        #[arg(long = "all-targets")]
+        all_targets: bool,
         #[arg(long = "param", value_name = "KEY=VALUE")]
         params: Vec<String>,
         #[arg(long = "build-arg", value_name = "KEY=VALUE")]
@@ -172,29 +184,34 @@ fn run() -> miette::Result<()> {
         Commands::Explain {
             path,
             target,
+            all_targets,
             params,
             build_args,
         } => {
             let mut opts = options(params, build_args, vec![]);
             opts.run_lints = false;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
-            print!("{}", compiled.ir.explain(&target));
+            let names = resolve_cli_targets(&compiled, &target, all_targets)?;
+            print!("{}", compiled.ir.explain(&names));
         }
         Commands::EmitLlb {
             path,
             target,
+            all_targets,
             params,
             build_args,
         } => {
             let mut opts = options(params, build_args, vec![]);
             opts.run_lints = false;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
-            let g = lower(&compiled.ir, &target);
+            let names = resolve_cli_targets(&compiled, &target, all_targets)?;
+            let g = lower(&compiled.ir, &names);
             print!("{}", summary(&g));
         }
         Commands::Build {
             path,
             target,
+            all_targets,
             tags,
             params,
             build_args,
@@ -213,13 +230,11 @@ fn run() -> miette::Result<()> {
             }
             let context = compiled.config.context_path(&compiled.root);
             lamina_client::ensure_context(&context).map_err(|e| miette::miette!(e))?;
-            let tags = if tags.is_empty() {
-                vec![lamina_client::default_image_tag(
-                    &compiled.config.package.name,
-                )]
-            } else {
-                tags
-            };
+            let available: Vec<String> = compiled.ir.targets.keys().cloned().collect();
+            let selected = build_targets::select_target_names(&available, &target, all_targets)
+                .map_err(|e| miette::miette!("{e}"))?;
+            let plans = build_targets::plan_solves(&compiled.config.package.name, &selected, &tags)
+                .map_err(|e| miette::miette!("{e}"))?;
             let mut plats = platforms;
             if plats.is_empty() {
                 plats = compiled.config.build.platforms.clone();
@@ -234,22 +249,44 @@ fn run() -> miette::Result<()> {
                         .collect::<Vec<_>>()
                 })
                 .collect();
-            let req = lamina_client::SolveRequest {
-                context,
-                targets: target,
-                tags: tags.clone(),
-                progress,
-                builder,
-                platforms,
-                push,
-                project_root: compiled.root.clone(),
-                package_name: compiled.config.package.name.clone(),
-            };
             eprintln!(
                 "note: solve uses an internal BuildKit bridge (ephemeral, not written to the project)."
             );
-            lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
-            println!("built {}", tags.join(", "));
+            let n = plans.len();
+            let mut built_tags = Vec::new();
+            for (i, plan) in plans.iter().enumerate() {
+                if n > 1 {
+                    let label = if plan.target.is_empty() {
+                        "(default)".into()
+                    } else {
+                        plan.target.clone()
+                    };
+                    eprintln!(
+                        "building target {label} ({}/{}) → {}",
+                        i + 1,
+                        n,
+                        plan.tags.join(", ")
+                    );
+                }
+                let req = lamina_client::SolveRequest {
+                    context: context.clone(),
+                    targets: if plan.target.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![plan.target.clone()]
+                    },
+                    tags: plan.tags.clone(),
+                    progress: progress.clone(),
+                    builder: builder.clone(),
+                    platforms: platforms.clone(),
+                    push,
+                    project_root: compiled.root.clone(),
+                    package_name: compiled.config.package.name.clone(),
+                };
+                lamina_client::solve(&compiled.ir, &req).map_err(|e| miette::miette!(e))?;
+                built_tags.extend(plan.tags.iter().cloned());
+            }
+            println!("built {}", built_tags.join(", "));
         }
         Commands::Clear {
             path,
@@ -295,6 +332,7 @@ fn run() -> miette::Result<()> {
         Commands::EmitDockerfile {
             path,
             target,
+            all_targets,
             params,
             build_args,
         } => {
@@ -304,7 +342,8 @@ fn run() -> miette::Result<()> {
             let mut opts = options(params, build_args, vec![]);
             opts.run_lints = false;
             let compiled = compile_project(&path, &opts).map_err(to_miette)?;
-            print!("{}", render_internal_dockerfile(&compiled.ir, &target));
+            let names = resolve_cli_targets(&compiled, &target, all_targets)?;
+            print!("{}", render_internal_dockerfile(&compiled.ir, &names));
         }
         Commands::Fmt { paths, check } => {
             let mut files: Vec<PathBuf> = Vec::new();
@@ -373,6 +412,16 @@ fn run() -> miette::Result<()> {
         }
     }
     Ok(())
+}
+
+fn resolve_cli_targets(
+    compiled: &lamina_lang::compile::Compiled,
+    named: &[String],
+    all_targets: bool,
+) -> miette::Result<Vec<String>> {
+    let available: Vec<String> = compiled.ir.targets.keys().cloned().collect();
+    build_targets::select_target_names(&available, named, all_targets)
+        .map_err(|e| miette::miette!("{e}"))
 }
 
 fn options(params: Vec<String>, build_args: Vec<String>, deny: Vec<String>) -> CompileOptions {

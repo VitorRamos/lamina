@@ -7,6 +7,11 @@
 - **Pure operators:** `==` / `!=` on `String`, `Int`, and `Bool`; `&&` / `||` on `Bool`
   (eval short-circuits). `if` stays an expression with required `else`. Not defined
   for `Stage` / `Mount` / `List`.
+- **`lamina build --target a --target b`** and **`--all-targets`**: sequential
+  fail-fast solves. Multi-target default tags are `{package}:{target}`; a single
+  target still defaults to `{package}:dev` and accepts multiple `-t` aliases.
+  `explain` / `emit-llb` / `emit-dockerfile` accept `--all-targets` for the same
+  naming.
 
 ## 1.4.0 — 2026-08-06
 

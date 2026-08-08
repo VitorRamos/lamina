@@ -54,10 +54,10 @@ cargo test --workspace
 ```text
 lamina check [PATH] [--deny LINT|all] [--locked] [--list-lints]
 lamina lock [PATH]
-lamina explain [PATH] --target NAME
-lamina emit-llb [PATH] --target NAME
-lamina emit-dockerfile [PATH] --target NAME   # lossy debug only
-lamina build [PATH] --target NAME -t REF [--platform P] [--push] [--deny LINT] [--locked]
+lamina explain [PATH] [--target NAME] [--all-targets]
+lamina emit-llb [PATH] [--target NAME] [--all-targets]
+lamina emit-dockerfile [PATH] [--target NAME] [--all-targets]   # lossy debug only
+lamina build [PATH] [--target NAME] [--all-targets] -t REF [--platform P] [--push] [--deny LINT] [--locked]
 lamina clear [PATH] [-t REF] [--dry-run]   # remove project images + build cache
 lamina fmt [PATH|FILE…] [--check]
 lamina lsp                              # Language Server (stdio)
