@@ -16,4 +16,6 @@ cargo run -q -p lamina-cli -- check examples/kitchen-sink
 cargo run -q -p lamina-cli -- explain examples/kitchen-sink --target app
 # optional image build (needs Buildx + network for apk/go):
 cargo run -q -p lamina-cli -- build examples/kitchen-sink --target app -t kitchen-sink:dev
+# both pub targets (tags kitchen-sink:app and kitchen-sink:debug):
+# cargo run -q -p lamina-cli -- build examples/kitchen-sink --all-targets
 ```

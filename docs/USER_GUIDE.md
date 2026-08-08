@@ -131,9 +131,12 @@ See `docs/grammar.md` and `docs/design.md` for full surface.
 | `lamina check --locked` | Verify `Lamina.lock` |
 | `lamina lock [PATH]` | Write `Lamina.lock` |
 | `lamina explain --target NAME` | Solve-set / stage summary |
+| `lamina explain --all-targets` | Same naming as build (explain already defaults to all) |
 | `lamina emit-llb --target NAME` | Stable LLB op text |
 | `lamina emit-dockerfile --target NAME` | **Lossy debug only** |
 | `lamina build --target NAME -t REF` | Build via Buildx |
+| `lamina build --target a --target b -t img:a -t img:b` | Sequential multi-target |
+| `lamina build --all-targets` | Every `pub target` (`{package}:{name}` tags) |
 | `lamina build --platform a,b --push` | Multi-arch (push required) |
 | `lamina clear [PATH]` | Remove project images + local build cache |
 | `lamina clear --dry-run` | Show what would be removed |
@@ -149,6 +152,8 @@ stock `docker` driver), builds also write a project-local layer cache under
 
 ```bash
 lamina build --target app -t myapp:dev
+lamina build --target app --target debug -t myapp:app -t myapp:debug
+lamina build --all-targets   # tags myapp:app, myapp:debug, … (fail-fast)
 lamina clear                 # remove labeled images, myapp:dev, and .lamina/build-cache
 lamina clear -t myapp:other  # also drop extra tags
 lamina clear --dry-run       # preview
@@ -156,6 +161,25 @@ lamina clear --dry-run       # preview
 
 This does **not** wipe the shared Docker/Buildx builder cache used by other
 projects. For a full builder prune: `docker buildx prune`.
+
+### Multi-target `lamina build`
+
+`check` / `explain` already consider every `pub target` (or a `--target` list).
+`build` historically solved **one** image per invocation. You can now pass several:
+
+| Flags | Tags |
+|-------|------|
+| one `--target` (or none) | All `-t` apply to that image; default `{package}:dev` |
+| `--target a --target b` | 0 tags → `{package}:a`, `{package}:b`; or **exactly N** `-t` paired in order |
+| `--all-targets` | Same as listing every `pub target` (cannot combine with `--target`) |
+
+Solves run **sequentially** and **fail-fast**. Parallel Buildx solves are out of scope.
+
+```bash
+lamina build . --target a --target b -t img:a -t img:b
+lamina build . --all-targets
+lamina build . --target app -t myapp:dev   # unchanged
+```
 
 ## Lockfile
 

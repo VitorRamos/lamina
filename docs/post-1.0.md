@@ -29,12 +29,7 @@ Prefer **small CI/docs** and **correctness** before large BuildKit surfaces:
 #25 gateway.v0 frontend        — buildx -f image.lam
 ```
 
-**Blocked until human input:**
-
-| Issue | Why |
-|-------|-----|
-| [#54](https://github.com/VitorRamos/lamina/issues/54) | `==` `!=` `&&` `||` (this PR) |
-| [#55](https://github.com/VitorRamos/lamina/issues/55) | `needs-decision` — multi-target `lamina build` UX |
+**Recently shipped (no longer blocked):** [#54](https://github.com/VitorRamos/lamina/issues/54) pure `==`/`!=`/`&&`/`||`; [#55](https://github.com/VitorRamos/lamina/issues/55) multi-target `lamina build`.
 
 Parallel is OK for **editor/LSP** (#49/#50) and **LLB/gateway** (#51/#25) when work is on separate crates/branches. Do not start dependents early.
 
