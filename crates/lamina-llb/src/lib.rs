@@ -360,7 +360,7 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
             match instr {
                 Instr::Platform(_) => {}
                 Instr::Workdir(p) => out.push_str(&format!("WORKDIR {p}\n")),
-                Instr::Run(c) => out.push_str(&format!("RUN {c}\n")),
+                Instr::Run(c) => out.push_str(&dockerfile_run("", c)),
                 Instr::Copy { src, dst } => out.push_str(&format!("COPY {src} {dst}\n")),
                 Instr::CopyMany { srcs, dst } => {
                     out.push_str(&format!("COPY {} {dst}\n", srcs.join(" ")))
@@ -397,14 +397,8 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
                     }
                 }
                 Instr::RunWith { cmd, mounts } => {
-                    let mut line = String::from("RUN");
-                    for m in mounts {
-                        line.push_str(&format!(" {}", mount_flag(m)));
-                    }
-                    line.push(' ');
-                    line.push_str(cmd);
-                    line.push('\n');
-                    out.push_str(&line);
+                    let flags = mounts.iter().map(mount_flag).collect::<Vec<_>>().join(" ");
+                    out.push_str(&dockerfile_run(&flags, cmd));
                 }
                 Instr::Name(_) | Instr::Arg(_) | Instr::ArgDefault { .. } => {}
             }
@@ -447,6 +441,50 @@ fn mount_flag(m: &MountSpec) -> String {
                 m.source, m.target
             )
         }
+    }
+}
+
+/// Emit one Dockerfile `RUN` instruction.
+///
+/// Multiline `.run` / `.run_with` bodies are one shell script (joined with
+/// newlines). Dumping them raw makes the second line a new Dockerfile
+/// instruction (`unknown instruction: apt-get`). Use a quoted heredoc so
+/// syntax 1.7 keeps a single RUN and does not interpolate `${…}` meant for
+/// the shell.
+fn dockerfile_run(flags: &str, cmd: &str) -> String {
+    let mut out = String::from("RUN");
+    if !flags.is_empty() {
+        out.push(' ');
+        out.push_str(flags);
+    }
+    if cmd.contains('\n') {
+        let delim = heredoc_delim(cmd);
+        out.push_str(" <<'");
+        out.push_str(&delim);
+        out.push_str("'\n");
+        out.push_str(cmd);
+        if !cmd.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&delim);
+        out.push('\n');
+    } else {
+        out.push(' ');
+        out.push_str(cmd);
+        out.push('\n');
+    }
+    out
+}
+
+fn heredoc_delim(body: &str) -> String {
+    let mut d = String::from("LAMINA");
+    let mut n = 0u32;
+    loop {
+        if !body.lines().any(|l| l == d) {
+            return d;
+        }
+        n += 1;
+        d = format!("LAMINA_{n}");
     }
 }
 
@@ -506,6 +544,56 @@ pub target app = Stage.from("alpine:3.19")
         assert!(
             df.contains(r#"LABEL desc="hello world""#),
             "label not quoted:\n{df}"
+        );
+    }
+
+    #[test]
+    fn internal_dockerfile_multiline_run_is_heredoc() {
+        let src = r#"
+pub target app = Stage.from("debian:bookworm-slim")
+  .run(["set -eux", "apt-get update", "true"])
+  .name("app");
+"#;
+        let c = compile_source(
+            "t.lam",
+            src,
+            LaminaToml::default(),
+            &CompileOptions::default(),
+        )
+        .unwrap();
+        let df = render_internal_dockerfile(&c.ir, &["app".into()]);
+        assert!(
+            df.contains("RUN <<'LAMINA'\nset -eux\napt-get update\ntrue\nLAMINA\n"),
+            "expected heredoc RUN, got:\n{df}"
+        );
+        assert!(
+            !df.lines().any(|l| l.starts_with("RUN apt-get")),
+            "must not split into a second RUN:\n{df}"
+        );
+    }
+
+    #[test]
+    fn internal_dockerfile_multiline_run_with_mounts() {
+        let src = r#"
+pub target app = Stage.from("golang:1.22")
+  .run_with(["go mod download", "go build -o /out/app"], [Mount.cache("/go/pkg", "go-pkg")])
+  .name("app");
+"#;
+        let c = compile_source(
+            "t.lam",
+            src,
+            LaminaToml::default(),
+            &CompileOptions::default(),
+        )
+        .unwrap();
+        let df = render_internal_dockerfile(&c.ir, &["app".into()]);
+        assert!(
+            df.contains("RUN --mount=type=cache,target=/go/pkg,id=go-pkg <<'LAMINA'\n"),
+            "expected mounted heredoc RUN, got:\n{df}"
+        );
+        assert!(
+            df.contains("go mod download\ngo build -o /out/app\nLAMINA\n"),
+            "{df}"
         );
     }
 }
