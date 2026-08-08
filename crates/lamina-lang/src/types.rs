@@ -277,30 +277,54 @@ fn check_expr(
             }
             Type::String
         }
-        ExprKind::BinaryAdd { left, right } => {
-            // Type the left first; use it as the expected type for the right so
-            // empty list literals (`[]`) pick up the left element type when on the right.
-            let lt = check_expr(left, tenv, fns, expected, diags)?;
-            let rt = check_expr(right, tenv, fns, Some(&lt), diags)?;
-            match (&lt, &rt) {
-                (Type::String, Type::String) => Type::String,
-                (Type::Int, Type::Int) => Type::Int,
-                (Type::List(a), Type::List(b)) if a == b => Type::List(a.clone()),
-                (Type::List(a), Type::List(b)) => {
-                    diags.push(DiagnosticMsg::error(
-                        format!(
-                            "cannot concatenate List[{}] and List[{}]",
-                            a.as_str(),
-                            b.as_str()
-                        ),
-                        Some(expr.span),
-                    ));
-                    return None;
+        ExprKind::Binary { op, left, right } => match op {
+            BinOp::Add => {
+                // Type the left first; use it as the expected type for the right so
+                // empty list literals (`[]`) pick up the left element type when on the right.
+                let lt = check_expr(left, tenv, fns, expected, diags)?;
+                let rt = check_expr(right, tenv, fns, Some(&lt), diags)?;
+                match (&lt, &rt) {
+                    (Type::String, Type::String) => Type::String,
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::List(a), Type::List(b)) if a == b => Type::List(a.clone()),
+                    (Type::List(a), Type::List(b)) => {
+                        diags.push(DiagnosticMsg::error(
+                            format!(
+                                "cannot concatenate List[{}] and List[{}]",
+                                a.as_str(),
+                                b.as_str()
+                            ),
+                            Some(expr.span),
+                        ));
+                        return None;
+                    }
+                    _ => {
+                        diags.push(DiagnosticMsg::error(
+                            format!(
+                                "operator `+` not defined for {} and {}",
+                                lt.as_str(),
+                                rt.as_str()
+                            ),
+                            Some(expr.span),
+                        ));
+                        return None;
+                    }
                 }
-                _ => {
+            }
+            BinOp::Eq | BinOp::Ne => {
+                let lt = check_expr(left, tenv, fns, None, diags)?;
+                let rt = check_expr(right, tenv, fns, Some(&lt), diags)?;
+                let comparable = matches!(
+                    (&lt, &rt),
+                    (Type::String, Type::String)
+                        | (Type::Int, Type::Int)
+                        | (Type::Bool, Type::Bool)
+                );
+                if !comparable {
                     diags.push(DiagnosticMsg::error(
                         format!(
-                            "operator `+` not defined for {} and {}",
+                            "operator `{}` not defined for {} and {} (only String, Int, Bool)",
+                            op.as_str(),
                             lt.as_str(),
                             rt.as_str()
                         ),
@@ -308,8 +332,26 @@ fn check_expr(
                     ));
                     return None;
                 }
+                Type::Bool
             }
-        }
+            BinOp::And | BinOp::Or => {
+                let lt = check_expr(left, tenv, fns, Some(&Type::Bool), diags)?;
+                let rt = check_expr(right, tenv, fns, Some(&Type::Bool), diags)?;
+                if lt != Type::Bool || rt != Type::Bool {
+                    diags.push(DiagnosticMsg::error(
+                        format!(
+                            "operator `{}` requires Bool operands, got {} and {}",
+                            op.as_str(),
+                            lt.as_str(),
+                            rt.as_str()
+                        ),
+                        Some(expr.span),
+                    ));
+                    return None;
+                }
+                Type::Bool
+            }
+        },
         ExprKind::If {
             cond,
             then_block,
@@ -584,5 +626,51 @@ mod tests {
         let f = SourceFile::new(FileId(0), "t.lam", src);
         let m = parse(&f).unwrap();
         typecheck(&f, &m).unwrap();
+    }
+
+    #[test]
+    fn typecheck_string_compare_if() {
+        let src = r#"
+pub target app = {
+  let libc = param("libc", "gnu");
+  if libc == "musl" {
+    Stage.from("alpine:3.19").name("app")
+  } else {
+    Stage.from("debian:bookworm-slim").name("app")
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).unwrap();
+        typecheck(&f, &m).unwrap();
+    }
+
+    #[test]
+    fn typecheck_rejects_stage_equality() {
+        let src = r#"
+pub target app = {
+  let a = Stage.from("alpine:3.19");
+  let b = Stage.from("alpine:3.19");
+  if a == b {
+    a.name("app")
+  } else {
+    b.name("app")
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).unwrap();
+        assert!(typecheck(&f, &m).is_err());
+    }
+
+    #[test]
+    fn typecheck_rejects_and_on_strings() {
+        let src = r#"
+const bad: Bool = "a" && "b";
+pub target app = Stage.from("alpine:3.19").name("app");
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).unwrap();
+        assert!(typecheck(&f, &m).is_err());
     }
 }

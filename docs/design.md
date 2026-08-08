@@ -436,6 +436,34 @@ As rev 3:
 - Functions; no keyword-only params in 0.1.
 - Modules/imports from 0.2; path-only deps until lockfile; remote modules post-1.0 (open design—see Composition vision).
 
+#### Pure comparison operators (post-1.0, #54)
+
+Minimal operator set so parameterized builders can branch on string/int params without extra `Bool` flags:
+
+| Op | Types | Result | Notes |
+|----|--------|--------|--------|
+| `==` `!=` | `String`, `Int`, `Bool` (same type both sides) | `Bool` | Structural; **not** on `Stage` / `Mount` / `List` |
+| `&&` `||` | `Bool` | `Bool` | Eval **short-circuits**; both sides still typechecked |
+| `+` | unchanged | | Still concat / int add / list concat |
+
+- **`if` stays expression-only** with required `else` (no unit / statement-only form).
+- Eval caps (`max_loop_iters`, `max_stages`) **unchanged**.
+- Precedence (low → high): `||` · `&&` · `==`/`!=` · `+` · method `.`.
+- Out of scope: pattern matching, unary `!`, user-defined operators, list/stage equality.
+
+Example:
+
+```lam
+let libc = param("libc", "gnu");
+pub target app = {
+  if libc == "musl" {
+    Stage.from("alpine:3.19").name("app")
+  } else {
+    Stage.from("debian:bookworm-slim").name("app")
+  }
+};
+```
+
 #### Params vs build-args (ARG model, LLB mapping)
 
 | Channel | Bound when | How it reaches BuildKit | Use |
@@ -975,9 +1003,12 @@ Type         ::= "String" | "Int" | "Bool" | "Stage"
 Block        ::= "{" { LetDecl | StmtExpr } Expr? "}" ;
 StmtExpr     ::= Expr ";" ;
 
-Expr         ::= ForExpr | IfExpr | AddExpr ;
+Expr         ::= ForExpr | IfExpr | OrExpr ;
 ForExpr      ::= "for" Ident "in" Expr Block ;
 IfExpr       ::= "if" Expr Block "else" Block ;
+OrExpr       ::= AndExpr { "||" AndExpr } ;
+AndExpr      ::= CmpExpr { "&&" CmpExpr } ;
+CmpExpr      ::= AddExpr { ("==" | "!=") AddExpr } ;
 AddExpr      ::= MethodExpr { "+" MethodExpr } ;
 MethodExpr   ::= Primary { "." Ident "(" [ ArgList ] ")" } ;
 Primary      ::= StringLiteral | IntLiteral | BoolLiteral

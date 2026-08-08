@@ -95,6 +95,8 @@ pub target app = {
 - **Mounts:** `Mount.cache` / `secret` / `ssh` / `bind` with `.run_with(cmd, mounts)`.
 - **Platform:** `.platform("linux/amd64")`.
 - **Lists:** literals `["a", "b"]`; concat with `+` when element types match (`base + more`).
+- **Compare / logic:** `==` `!=` on `String` / `Int` / `Bool`; `&&` `||` on `Bool` (short-circuit).
+  Use with `if` / `param` (not on `Stage`). Example: `if libc == "musl" { … } else { … }`.
 - **Multiline strings:** `"""…"""` (dedented; `${name}` interp) or `r"""…"""` (raw, for shell `${VAR}`).
 - **`.run` scripts:** pass a string, a multiline string, or a list of lines:
 

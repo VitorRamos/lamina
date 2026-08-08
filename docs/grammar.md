@@ -64,6 +64,11 @@ TargetDecl   ::= "pub" "target" Ident "=" Expr ";" ;
 - Statements end with `;`; block tail expression may omit `;`.
 - `for x in <List[T]> { U }` yields `List[U]`.
 - Operator `+`: `String + String`, `Int + Int`, and **`List[T] + List[T]`** (concatenate; same element type).
+- **Comparisons / logic (post-1.0):** `==` `!=` on `String`, `Int`, `Bool` → `Bool`;
+  `&&` `||` on `Bool` → `Bool` (eval **short-circuits**). Not defined for `Stage`, `Mount`, or `List`.
+- Precedence (low → high): `||` → `&&` → `==` `!=` → `+` → `.method()`.
+- `if` remains an **expression** with required `else`; both branches same type.
+  No statement-only `if` (no unit type).
 - **Strings:** `"…"` single-line (escapes + `${ident}`); `"""…"""` multiline (dedent + interp);
   `r"""…"""` raw multiline (no escapes/interp — good for shell `${VAR}`).
 - **`.run` / `.run_with`:** first arg is `String` **or** `List[String]` (list joined with newlines into one `RUN`).

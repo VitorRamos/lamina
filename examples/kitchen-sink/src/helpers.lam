@@ -34,3 +34,13 @@ pub fn runtime_base(from_build_arg: Bool, fallback: String) -> Stage {
     Stage.from(fallback)
   }
 }
+
+/// Stamp a libc variant label (`param("libc", "gnu")` / `"musl"`).
+
+pub fn with_libc(s: Stage, libc: String) -> Stage {
+  if libc == "musl" || libc == "gnu" {
+    s.label("lamina.libc", libc)
+  } else {
+    s.label("lamina.libc", "unknown")
+  }
+}
