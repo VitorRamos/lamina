@@ -397,11 +397,7 @@ pub fn render_internal_dockerfile(ir: &ModuleIr, targets: &[String]) -> String {
                     }
                 }
                 Instr::RunWith { cmd, mounts } => {
-                    let flags = mounts
-                        .iter()
-                        .map(mount_flag)
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let flags = mounts.iter().map(mount_flag).collect::<Vec<_>>().join(" ");
                     out.push_str(&dockerfile_run(&flags, cmd));
                 }
                 Instr::Name(_) | Instr::Arg(_) | Instr::ArgDefault { .. } => {}
