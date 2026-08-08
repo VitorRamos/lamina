@@ -13,6 +13,12 @@
   `explain` / `emit-llb` / `emit-dockerfile` accept `--all-targets` for the same
   naming.
 
+### Fixed
+
+- **`lamina build`**: multiline `.run` / `.run_with` (list or `"""…"""`) emit a
+  single Dockerfile heredoc `RUN`, not extra instructions (`unknown instruction:
+  apt-get`).
+
 ## 1.4.0 — 2026-08-06
 
 ### Added
