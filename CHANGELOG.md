@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- **Pure operators:** `==` / `!=` on `String`, `Int`, and `Bool`; `&&` / `||` on `Bool`
+  (eval short-circuits). `if` stays an expression with required `else`. Not defined
+  for `Stage` / `Mount` / `List`.
+
 ## 1.4.0 — 2026-08-06
 
 ### Added

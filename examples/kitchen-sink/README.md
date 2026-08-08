@@ -5,6 +5,7 @@ Tour of the Lamina language surface in one multi-stage image.
 | Area | What you will see |
 |------|-------------------|
 | Keywords | `use`, `arg`, `const`, `let`, `fn` / `pub fn`, `pub target`, `if` / `else`, `for` / `in`, `true` / `false` |
+| Operators | `+` (string/int/list), `==` `!=` (String/Int/Bool), `&&` `\|\|` (Bool) |
 | Soft forms | `param(…)`, `Stage.from` / `Stage.from_arg`, `Mount.*` |
 | Stage API | workdir, run, run_with, copy, copy_many, copy_from, env, arg, arg_default, user, entrypoint, cmd, expose, label, healthcheck, platform, name |
 | Modules | `./helpers.lam` + `std/golang.lam` |

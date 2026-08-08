@@ -27,8 +27,9 @@ const USE_RUNTIME_ARG: Bool = false;
 // When true, attach secret/ssh/bind mounts (still optional at solve: required=false).
 const USE_PRIVATE_MOUNTS: Bool = true;
 
-// Compile-time param (override with --param go_version=1.23-alpine).
+// Compile-time params (override with --param go_version=… / --param libc=musl).
 let go_tag = param("go_version", "1.22-alpine");
+let libc = param("libc", "gnu");
 
 // `for … in` over a list (pure values → List[String]).
 let apk_packages = for pkg in ["ca-certificates", "tzdata"] {
@@ -107,8 +108,11 @@ pub target app = {
 };
 
 /// Tiny debug image (second target; alpine helper from path module).
-pub target debug = alpine("3.19")
-  .run("apk add --no-cache curl")
-  .cmd(["/bin/sh"])
-  .label("app", APP_NAME + "-debug")
+pub target debug = with_libc(
+  alpine("3.19")
+    .run("apk add --no-cache curl")
+    .cmd(["/bin/sh"])
+    .label("app", APP_NAME + "-debug"),
+  libc
+)
   .name("debug");

@@ -365,10 +365,12 @@ fn format_expr_atom(out: &mut String, expr: &Expr, indent: usize) {
             }
             out.push(')');
         }
-        ExprKind::BinaryAdd { left, right } => {
-            format_expr(out, left, indent);
-            out.push_str(" + ");
-            format_expr(out, right, indent);
+        ExprKind::Binary { op, left, right } => {
+            format_binary_operand(out, left, indent, *op, false);
+            out.push(' ');
+            out.push_str(op.as_str());
+            out.push(' ');
+            format_binary_operand(out, right, indent, *op, true);
         }
         ExprKind::If {
             cond,
@@ -391,6 +393,31 @@ fn format_expr_atom(out: &mut String, expr: &Expr, indent: usize) {
             format_block(out, body, indent);
         }
         ExprKind::Block(b) => format_block(out, b, indent),
+    }
+}
+
+fn format_binary_operand(
+    out: &mut String,
+    expr: &Expr,
+    indent: usize,
+    parent: BinOp,
+    is_right: bool,
+) {
+    let wrap = match &expr.kind {
+        ExprKind::Binary { op, .. } => {
+            let p = op.precedence();
+            let q = parent.precedence();
+            p < q || (p == q && is_right)
+        }
+        ExprKind::If { .. } | ExprKind::For { .. } => true,
+        _ => false,
+    };
+    if wrap {
+        out.push('(');
+        format_expr(out, expr, indent);
+        out.push(')');
+    } else {
+        format_expr(out, expr, indent);
     }
 }
 
@@ -629,6 +656,21 @@ pub target app = Stage.from("alpine:3.19").name("app");
         // idempotent
         let out2 = format_source("t.lam", &out).unwrap();
         assert_eq!(out, out2, "not idempotent:\n{out}");
+    }
+
+    #[test]
+    fn fmt_comparison_operators() {
+        let src = r#"
+const ok: Bool = "a" + "b" == "ab" && 1 != 2 || false;
+pub target app = Stage.from("alpine:3.19").name("app");
+"#;
+        let out = format_source("t.lam", src).unwrap();
+        assert!(
+            out.contains(r#"const ok: Bool = "a" + "b" == "ab" && 1 != 2 || false;"#),
+            "ops should keep precedence without extra parens:\n{out}"
+        );
+        let out2 = format_source("t.lam", &out).unwrap();
+        assert_eq!(out, out2);
     }
 
     #[test]

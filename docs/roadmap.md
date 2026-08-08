@@ -96,7 +96,7 @@ Overview: [`post-1.0.md`](post-1.0.md). Workspace is **1.3.x**; open work below 
 | [#50](https://github.com/VitorRamos/lamina/issues/50) | LSP polish (tokens, rename, symbols) | **agent-ready** | after #49 helpful |
 | [#51](https://github.com/VitorRamos/lamina/issues/51) | True `pb.Definition` emission | **agent-ready** | demote Dockerfile solve bridge |
 | [#25](https://github.com/VitorRamos/lamina/issues/25) | BuildKit gateway.v0 for `.lam` | **agent-ready** | true `buildx -f` |
-| [#54](https://github.com/VitorRamos/lamina/issues/54) | Richer pure string ops | **needs-design** | design PR first |
+| [#54](https://github.com/VitorRamos/lamina/issues/54) | Richer pure string ops | **this PR** | `==` `!=` `&&` `||`; design note + grammar |
 | [#55](https://github.com/VitorRamos/lamina/issues/55) | Multi-target `lamina build` | **needs-decision** | product choice |
 
 **Suggested order:** small CI/docs (#45–#48, #57) → #53 / #44 → editor (#49 → #50) → LLB (#51) → gateway (#25). Parallel OK when crates do not collide.

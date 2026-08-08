@@ -152,7 +152,8 @@ pub enum ExprKind {
         name: String,
         default: Option<Box<Expr>>,
     },
-    BinaryAdd {
+    Binary {
+        op: BinOp,
         left: Box<Expr>,
         right: Box<Expr>,
     },
@@ -173,4 +174,36 @@ pub enum ExprKind {
 pub enum InterpPart {
     Lit(String),
     Ident(String),
+}
+
+/// Pure binary operators. Precedence (low → high): `Or`, `And`, `Eq`/`Ne`, `Add`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Eq,
+    Ne,
+    And,
+    Or,
+}
+
+impl BinOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BinOp::Add => "+",
+            BinOp::Eq => "==",
+            BinOp::Ne => "!=",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+        }
+    }
+
+    /// Higher binds tighter. Used by `fmt`.
+    pub fn precedence(self) -> u8 {
+        match self {
+            BinOp::Or => 1,
+            BinOp::And => 2,
+            BinOp::Eq | BinOp::Ne => 3,
+            BinOp::Add => 4,
+        }
+    }
 }

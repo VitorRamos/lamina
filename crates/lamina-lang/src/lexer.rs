@@ -40,6 +40,10 @@ pub enum TokenKind {
     Plus,
     Arrow, // ->
     Eq,
+    EqEq,     // ==
+    BangEq,   // !=
+    AmpAmp,   // &&
+    PipePipe, // ||
     Eof,
 }
 
@@ -150,7 +154,48 @@ impl<'a> Lexer<'a> {
                 }
                 b'=' => {
                     self.bump();
-                    self.push(TokenKind::Eq, start);
+                    if self.peek() == Some(b'=') {
+                        self.bump();
+                        self.push(TokenKind::EqEq, start);
+                    } else {
+                        self.push(TokenKind::Eq, start);
+                    }
+                }
+                b'!' => {
+                    if self.src.get(self.pos + 1) == Some(&b'=') {
+                        self.bump();
+                        self.bump();
+                        self.push(TokenKind::BangEq, start);
+                    } else {
+                        return Err(DiagnosticMsg::error(
+                            "unexpected character '!'; use `!=` for inequality",
+                            Some(self.span(start, start + 1)),
+                        ));
+                    }
+                }
+                b'&' => {
+                    if self.src.get(self.pos + 1) == Some(&b'&') {
+                        self.bump();
+                        self.bump();
+                        self.push(TokenKind::AmpAmp, start);
+                    } else {
+                        return Err(DiagnosticMsg::error(
+                            "unexpected character '&'; use `&&` for logical and",
+                            Some(self.span(start, start + 1)),
+                        ));
+                    }
+                }
+                b'|' => {
+                    if self.src.get(self.pos + 1) == Some(&b'|') {
+                        self.bump();
+                        self.bump();
+                        self.push(TokenKind::PipePipe, start);
+                    } else {
+                        return Err(DiagnosticMsg::error(
+                            "unexpected character '|'; use `||` for logical or",
+                            Some(self.span(start, start + 1)),
+                        ));
+                    }
                 }
                 b'-' if self.src.get(self.pos + 1) == Some(&b'>') => {
                     self.bump();
@@ -591,6 +636,21 @@ mod tests {
         let toks = lex(&file("let x = 1;")).unwrap();
         assert!(matches!(toks[0].kind, TokenKind::Let));
         assert!(matches!(toks[1].kind, TokenKind::Ident(ref s) if s == "x"));
+    }
+
+    #[test]
+    fn comparison_and_logic_tokens() {
+        let toks = lex(&file(r#"a == b != c && d || e"#)).unwrap();
+        let kinds: Vec<_> = toks.iter().map(|t| &t.kind).collect();
+        assert!(matches!(kinds[0], TokenKind::Ident(s) if s == "a"));
+        assert!(matches!(kinds[1], TokenKind::EqEq));
+        assert!(matches!(kinds[2], TokenKind::Ident(s) if s == "b"));
+        assert!(matches!(kinds[3], TokenKind::BangEq));
+        assert!(matches!(kinds[4], TokenKind::Ident(s) if s == "c"));
+        assert!(matches!(kinds[5], TokenKind::AmpAmp));
+        assert!(matches!(kinds[6], TokenKind::Ident(s) if s == "d"));
+        assert!(matches!(kinds[7], TokenKind::PipePipe));
+        assert!(matches!(kinds[8], TokenKind::Ident(s) if s == "e"));
     }
 
     #[test]

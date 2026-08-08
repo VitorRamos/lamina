@@ -97,6 +97,21 @@ struct Evaluator<'a> {
     loop_iters: usize,
 }
 
+fn values_eq(l: &Value, r: &Value, span: crate::span::Span, file: &SourceFile) -> Result<bool> {
+    match (l, r) {
+        (Value::String(a), Value::String(b)) => Ok(a == b),
+        (Value::Int(a), Value::Int(b)) => Ok(a == b),
+        (Value::Bool(a), Value::Bool(b)) => Ok(a == b),
+        _ => Err(CompileError::single(
+            Some(file),
+            DiagnosticMsg::error(
+                "equality is only defined for String, Int, and Bool",
+                Some(span),
+            ),
+        )),
+    }
+}
+
 pub fn evaluate(file: &SourceFile, module: &Module, input: &EvalInput) -> Result<ModuleIr> {
     let mut ev = Evaluator {
         file,
@@ -388,22 +403,7 @@ impl<'a> Evaluator<'a> {
                     ),
                 ))
             }
-            ExprKind::BinaryAdd { left, right } => {
-                let l = self.eval_expr_mut(left, env)?;
-                let r = self.eval_expr_mut(right, env)?;
-                match (l, r) {
-                    (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-                    (Value::List(mut a), Value::List(b)) => {
-                        a.extend(b);
-                        Ok(Value::List(a))
-                    }
-                    _ => Err(CompileError::single(
-                        Some(self.file),
-                        DiagnosticMsg::error("invalid operands for `+`", Some(expr.span)),
-                    )),
-                }
-            }
+            ExprKind::Binary { op, left, right } => self.eval_binary(*op, left, right, env, expr),
             ExprKind::If {
                 cond,
                 then_block,
@@ -446,6 +446,73 @@ impl<'a> Evaluator<'a> {
                 Ok(Value::List(out))
             }
             ExprKind::Block(b) => self.eval_block_mut(b, env),
+        }
+    }
+
+    fn eval_binary(
+        &mut self,
+        op: BinOp,
+        left: &Expr,
+        right: &Expr,
+        env: &mut HashMap<String, Value>,
+        expr: &Expr,
+    ) -> Result<Value> {
+        match op {
+            BinOp::And => {
+                let l = self.eval_expr_mut(left, env)?;
+                match l {
+                    Value::Bool(false) => Ok(Value::Bool(false)),
+                    Value::Bool(true) => match self.eval_expr_mut(right, env)? {
+                        Value::Bool(b) => Ok(Value::Bool(b)),
+                        _ => Err(CompileError::single(
+                            Some(self.file),
+                            DiagnosticMsg::error("operator `&&` requires Bool", Some(expr.span)),
+                        )),
+                    },
+                    _ => Err(CompileError::single(
+                        Some(self.file),
+                        DiagnosticMsg::error("operator `&&` requires Bool", Some(left.span)),
+                    )),
+                }
+            }
+            BinOp::Or => {
+                let l = self.eval_expr_mut(left, env)?;
+                match l {
+                    Value::Bool(true) => Ok(Value::Bool(true)),
+                    Value::Bool(false) => match self.eval_expr_mut(right, env)? {
+                        Value::Bool(b) => Ok(Value::Bool(b)),
+                        _ => Err(CompileError::single(
+                            Some(self.file),
+                            DiagnosticMsg::error("operator `||` requires Bool", Some(expr.span)),
+                        )),
+                    },
+                    _ => Err(CompileError::single(
+                        Some(self.file),
+                        DiagnosticMsg::error("operator `||` requires Bool", Some(left.span)),
+                    )),
+                }
+            }
+            BinOp::Add | BinOp::Eq | BinOp::Ne => {
+                let l = self.eval_expr_mut(left, env)?;
+                let r = self.eval_expr_mut(right, env)?;
+                match op {
+                    BinOp::Add => match (l, r) {
+                        (Value::String(a), Value::String(b)) => Ok(Value::String(a + &b)),
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                        (Value::List(mut a), Value::List(b)) => {
+                            a.extend(b);
+                            Ok(Value::List(a))
+                        }
+                        _ => Err(CompileError::single(
+                            Some(self.file),
+                            DiagnosticMsg::error("invalid operands for `+`", Some(expr.span)),
+                        )),
+                    },
+                    BinOp::Eq => values_eq(&l, &r, expr.span, self.file).map(Value::Bool),
+                    BinOp::Ne => values_eq(&l, &r, expr.span, self.file).map(|b| Value::Bool(!b)),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
@@ -732,5 +799,74 @@ pub target app = Stage.from("alpine:3.19")
             })
             .expect("run");
         assert_eq!(run, "set -eux\ntrue");
+    }
+
+    #[test]
+    fn string_compare_selects_base() {
+        let src = r#"
+pub target app = {
+  let libc = param("libc", "gnu");
+  if libc == "musl" {
+    Stage.from("alpine:3.19").name("app")
+  } else {
+    Stage.from("debian:bookworm-slim").name("app")
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let mut input = EvalInput::default();
+        input.params.insert("libc".into(), "musl".into());
+        let ir = evaluate(&f, &m, &input).expect("eval");
+        let id = *ir.targets.get("app").unwrap();
+        match &ir.stages[&id].base {
+            StageBase::Image(img) => assert_eq!(img, "alpine:3.19"),
+            other => panic!("expected image base, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn and_or_short_circuit_skips_missing_param() {
+        let src = r#"
+pub target app = {
+  if false && param("missing") == "x" {
+    Stage.from("never:used").name("app")
+  } else {
+    if true || param("also_missing") == "x" {
+      Stage.from("alpine:3.19").name("app")
+    } else {
+      Stage.from("never:else").name("app")
+    }
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        let ir = evaluate(&f, &m, &EvalInput::default()).expect("eval short-circuit");
+        let id = *ir.targets.get("app").unwrap();
+        match &ir.stages[&id].base {
+            StageBase::Image(img) => assert_eq!(img, "alpine:3.19"),
+            other => panic!("expected alpine, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn int_and_bool_compare() {
+        let src = r#"
+const PORT: Int = 8080;
+pub target app = {
+  if PORT != 0 && true == true {
+    Stage.from("alpine:3.19").name("app")
+  } else {
+    Stage.from("scratch").name("app")
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse");
+        typecheck(&f, &m).expect("types");
+        evaluate(&f, &m, &EvalInput::default()).expect("eval");
     }
 }

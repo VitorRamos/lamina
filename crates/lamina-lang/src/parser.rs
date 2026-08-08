@@ -330,7 +330,7 @@ impl<'a> Parser<'a> {
         match self.peek().kind {
             TokenKind::For => self.parse_for(),
             TokenKind::If => self.parse_if(),
-            _ => self.parse_add(),
+            _ => self.parse_or(),
         }
     }
 
@@ -366,19 +366,47 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_or(&mut self) -> std::result::Result<Expr, DiagnosticMsg> {
+        let mut left = self.parse_and()?;
+        while self.peek().kind == TokenKind::PipePipe {
+            self.bump();
+            let right = self.parse_and()?;
+            left = binary(BinOp::Or, left, right);
+        }
+        Ok(left)
+    }
+
+    fn parse_and(&mut self) -> std::result::Result<Expr, DiagnosticMsg> {
+        let mut left = self.parse_cmp()?;
+        while self.peek().kind == TokenKind::AmpAmp {
+            self.bump();
+            let right = self.parse_cmp()?;
+            left = binary(BinOp::And, left, right);
+        }
+        Ok(left)
+    }
+
+    fn parse_cmp(&mut self) -> std::result::Result<Expr, DiagnosticMsg> {
+        let mut left = self.parse_add()?;
+        loop {
+            let op = match self.peek().kind {
+                TokenKind::EqEq => BinOp::Eq,
+                TokenKind::BangEq => BinOp::Ne,
+                _ => break,
+            };
+            self.bump();
+            let right = self.parse_add()?;
+            left = binary(op, left, right);
+        }
+        Ok(left)
+    }
+
     fn parse_add(&mut self) -> std::result::Result<Expr, DiagnosticMsg> {
         let mut left = self.parse_method()?;
         while self.peek().kind == TokenKind::Plus {
             self.bump();
             let right = self.parse_method()?;
-            let span = left.span.merge(right.span);
-            left = Expr {
-                span,
-                kind: ExprKind::BinaryAdd {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                },
-            };
+            left = binary(BinOp::Add, left, right);
         }
         Ok(left)
     }
@@ -635,6 +663,17 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn binary(op: BinOp, left: Expr, right: Expr) -> Expr {
+    Expr {
+        span: left.span.merge(right.span),
+        kind: ExprKind::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,5 +705,71 @@ pub target app = {
 "#;
         let f = SourceFile::new(FileId(0), "t.lam", src);
         parse(&f).expect("parse hello-shaped");
+    }
+
+    #[test]
+    fn parse_string_compare_if() {
+        let src = r#"
+pub target app = {
+  let libc = param("libc", "gnu");
+  if libc == "musl" || libc == "gnu" && true {
+    Stage.from("alpine:3.19").name("app")
+  } else {
+    Stage.from("alpine:3.19").name("app")
+  }
+};
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse compare if");
+        let Item::Target(t) = &m.items[0] else {
+            panic!("expected target");
+        };
+        match &t.value.kind {
+            ExprKind::Block(b) => {
+                let tail = b.tail.as_ref().expect("block tail");
+                assert!(matches!(tail.kind, ExprKind::If { .. }));
+            }
+            other => panic!("expected block, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_cmp_binds_tighter_than_and() {
+        let src = r#"
+const ok: Bool = "a" + "b" == "ab" && 1 != 2 || false;
+pub target app = Stage.from("alpine:3.19").name("app");
+"#;
+        let f = SourceFile::new(FileId(0), "t.lam", src);
+        let m = parse(&f).expect("parse ops");
+        let Item::Const(c) = &m.items[0] else {
+            panic!("expected const");
+        };
+        // || at top, && in left, == / != under &&, + under ==
+        let ExprKind::Binary {
+            op: BinOp::Or,
+            left,
+            ..
+        } = &c.value.kind
+        else {
+            panic!("expected || at root, got {:?}", c.value.kind);
+        };
+        let ExprKind::Binary {
+            op: BinOp::And,
+            left: and_l,
+            right: and_r,
+        } = &left.kind
+        else {
+            panic!("expected && under ||");
+        };
+        assert!(matches!(and_l.kind, ExprKind::Binary { op: BinOp::Eq, .. }));
+        assert!(matches!(and_r.kind, ExprKind::Binary { op: BinOp::Ne, .. }));
+        if let ExprKind::Binary {
+            op: BinOp::Eq,
+            left: eq_l,
+            ..
+        } = &and_l.kind
+        {
+            assert!(matches!(eq_l.kind, ExprKind::Binary { op: BinOp::Add, .. }));
+        }
     }
 }

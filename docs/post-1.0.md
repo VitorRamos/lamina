@@ -33,7 +33,7 @@ Prefer **small CI/docs** and **correctness** before large BuildKit surfaces:
 
 | Issue | Why |
 |-------|-----|
-| [#54](https://github.com/VitorRamos/lamina/issues/54) | `needs-design` — string ops / richer pure operators |
+| [#54](https://github.com/VitorRamos/lamina/issues/54) | `==` `!=` `&&` `||` (this PR) |
 | [#55](https://github.com/VitorRamos/lamina/issues/55) | `needs-decision` — multi-target `lamina build` UX |
 
 Parallel is OK for **editor/LSP** (#49/#50) and **LLB/gateway** (#51/#25) when work is on separate crates/branches. Do not start dependents early.
