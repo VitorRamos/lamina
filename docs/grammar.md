@@ -56,7 +56,7 @@ TargetDecl   ::= "pub" "target" Ident "=" Expr ";" ;
 - `use "./path.lam";` — relative to the importing file; must stay under project root
 - `use "std/name.lam";` — resolved via `LAMINA_STDLIB` or repo `stdlib/`
 - `use "git+https://host/repo.git?ref=TAG&path=file.lam";` — git remote (also `git+ssh`, `git+file`)
-- Only `pub fn` is exported from a used module (transitive `use` inside modules supported)
+- Only a `pub fn` **declared in that file** is exported. `use` does not re-export: a module may call helpers from its own `use`s, and those names stay out of the importer's scope. Several modules can `use` the same helper without an import conflict.
 - Absolute local paths are not allowed; bare `http://` remotes are rejected
 
 ## Notes

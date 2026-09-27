@@ -91,7 +91,7 @@ pub target app = {
 
 - **Stages** are immutable values; methods return new stages.
 - **`pub target`** is an exportable image root.
-- **`use`** imports `pub fn` from path modules or `std/…`.
+- **`use`** imports `pub fn` declarations from that file only (path modules or `std/…`). Helpers that file itself imported are not re-exported, so two modules can share a helper without clashing.
 - **Mounts:** `Mount.cache` / `secret` / `ssh` / `bind` with `.run_with(cmd, mounts)`.
 - **Platform:** `.platform("linux/amd64")`.
 - **Lists:** literals `["a", "b"]`; concat with `+` when element types match (`base + more`).

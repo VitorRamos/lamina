@@ -1,13 +1,18 @@
 //! Module loading: path, stdlib, and git remotes (`use "…";`).
 
-use crate::ast::{FnDecl, Item, Module};
+use crate::ast::{Block, BlockStmt, Expr, ExprKind, FnDecl, Item, Module};
 use crate::diag::{CompileError, DiagnosticMsg, Result};
 use crate::git_remote::{self, parse_remote_use, to_git_plus_spec};
 use crate::lock::{hash_file, ModuleKind, ResolvedModule};
 use crate::parser::parse;
 use crate::span::{FileId, SourceFile};
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
+
+/// Prefix for helpers copied into an importer so exported bodies can call them
+/// without putting those names in the importer's scope.
+const INTERNAL_DEP_PREFIX: &str = "__lamina_dep_";
 
 #[derive(Debug, Clone)]
 pub struct ModuleLoadContext {
@@ -146,6 +151,10 @@ fn expand_uses(
                 let exports = load_exports(&path, state)?;
                 for f in exports {
                     if !seen.insert(f.name.clone()) {
+                        // Same helper inlined for two modules that share a dependency.
+                        if is_internal_dep(&f.name) {
+                            continue;
+                        }
                         return Err(CompileError::single(
                             Some(file),
                             DiagnosticMsg::error(
@@ -230,19 +239,288 @@ fn load_exports(path: &Path, state: &mut ExpandState<'_>) -> Result<Vec<FnDecl>>
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let expanded = expand_uses(&file, parsed, &dir, state)?;
-    let mut exports = Vec::new();
-    for item in &expanded.items {
-        if let Item::Fn(f) = item {
-            if f.is_pub {
-                exports.push(f.clone());
+    // Only `pub fn`s declared in this file are part of the public export.
+    // Helpers they call (local private fns, or fns brought in by `use`) are
+    // copied under stable internal names so bodies still resolve, but those
+    // names are not re-exported to the next importer.
+    let mut direct: HashMap<String, FnDecl> = HashMap::new();
+    let mut use_items = Vec::new();
+    for item in &parsed.items {
+        match item {
+            Item::Fn(f) => {
+                direct.insert(f.name.clone(), f.clone());
             }
+            Item::Use(u) => use_items.push(u.clone()),
+            _ => {}
+        }
+    }
+
+    let mut imported_pub: HashMap<String, (PathBuf, FnDecl)> = HashMap::new();
+    let mut imported_support: HashMap<String, FnDecl> = HashMap::new();
+    for u in &use_items {
+        let (dep_path, kind, commit, lock_spec) = resolve_use_path(&u.path, &dir, state.ctx)
+            .map_err(|msg| {
+                CompileError::single(Some(&file), DiagnosticMsg::error(msg, Some(u.span)))
+            })?;
+        let record_spec = lock_spec.as_deref().unwrap_or(u.path.as_str());
+        record_resolved(record_spec, &dep_path, kind, commit, state.resolved_map)?;
+        let dep_key = dep_path.canonicalize().unwrap_or_else(|_| dep_path.clone());
+        let dep_exports = load_exports(&dep_path, state)?;
+        for f in dep_exports {
+            if f.is_pub {
+                if direct.contains_key(&f.name) || imported_pub.contains_key(&f.name) {
+                    return Err(CompileError::single(
+                        Some(&file),
+                        DiagnosticMsg::error(
+                            format!(
+                                "import conflict: function `{}` already defined (from {})",
+                                f.name,
+                                dep_path.display()
+                            ),
+                            Some(u.span),
+                        ),
+                    ));
+                }
+                imported_pub.insert(f.name.clone(), (dep_key.clone(), f));
+            } else {
+                imported_support.entry(f.name.clone()).or_insert(f);
+            }
+        }
+    }
+
+    let mut needed: Vec<String> = direct
+        .values()
+        .filter(|f| f.is_pub)
+        .map(|f| f.name.clone())
+        .collect();
+    let mut seen_needed: HashSet<String> = needed.iter().cloned().collect();
+    let mut idx = 0;
+    while idx < needed.len() {
+        let name = needed[idx].clone();
+        idx += 1;
+        let body = if let Some(f) = direct.get(&name) {
+            f
+        } else if let Some((_, f)) = imported_pub.get(&name) {
+            f
+        } else if let Some(f) = imported_support.get(&name) {
+            f
+        } else {
+            continue;
+        };
+        for callee in call_callees(body) {
+            let known = direct.contains_key(&callee)
+                || imported_pub.contains_key(&callee)
+                || imported_support.contains_key(&callee);
+            if known && seen_needed.insert(callee.clone()) {
+                needed.push(callee);
+            }
+        }
+    }
+
+    let mut direct_rename: HashMap<String, String> = HashMap::new();
+    for (n, f) in &direct {
+        if !f.is_pub {
+            direct_rename.insert(n.clone(), internal_dep_name(&key, n));
+        }
+    }
+    for (n, (origin, _)) in &imported_pub {
+        direct_rename.insert(n.clone(), internal_dep_name(origin, n));
+    }
+
+    let mut exports = Vec::new();
+    for name in &needed {
+        if let Some(f) = direct.get(name) {
+            let mut out = f.clone();
+            rewrite_fn(&mut out, &direct_rename);
+            if !out.is_pub {
+                out.name = internal_dep_name(&key, name);
+            }
+            exports.push(out);
+        } else if let Some((origin, f)) = imported_pub.get(name) {
+            let mut out = f.clone();
+            out.is_pub = false;
+            out.name = internal_dep_name(origin, name);
+            let mut rename = HashMap::new();
+            for (n, (o, _)) in &imported_pub {
+                if o == origin {
+                    rename.insert(n.clone(), internal_dep_name(o, n));
+                }
+            }
+            rewrite_fn(&mut out, &rename);
+            exports.push(out);
+        } else if let Some(f) = imported_support.get(name) {
+            let mut out = f.clone();
+            out.is_pub = false;
+            exports.push(out);
         }
     }
 
     state.visiting.remove(&key);
     state.cache.insert(key, exports.clone());
     Ok(exports)
+}
+
+fn is_internal_dep(name: &str) -> bool {
+    name.starts_with(INTERNAL_DEP_PREFIX)
+}
+
+fn internal_dep_name(origin: &Path, name: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    origin.hash(&mut hasher);
+    name.hash(&mut hasher);
+    format!("{INTERNAL_DEP_PREFIX}{:016x}_{name}", hasher.finish())
+}
+
+fn call_callees(f: &FnDecl) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_block(&f.body, &mut out);
+    out
+}
+
+fn collect_block(block: &Block, out: &mut Vec<String>) {
+    for stmt in &block.stmts {
+        match stmt {
+            BlockStmt::Let(l) => collect_expr(&l.value, out),
+            BlockStmt::Assign { value, .. } => collect_expr(value, out),
+            BlockStmt::Expr(e) => collect_expr(e, out),
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr(tail, out);
+    }
+}
+
+fn collect_expr(expr: &Expr, out: &mut Vec<String>) {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            out.push(callee.clone());
+            for a in args {
+                collect_expr(a, out);
+            }
+        }
+        ExprKind::Method { recv, args, .. } => {
+            collect_expr(recv, out);
+            for a in args {
+                collect_expr(a, out);
+            }
+        }
+        ExprKind::List(xs) => {
+            for x in xs {
+                collect_expr(x, out);
+            }
+        }
+        ExprKind::StageFrom { image } => collect_expr(image, out),
+        ExprKind::MountCtor { args, .. } => {
+            for a in args {
+                collect_expr(a, out);
+            }
+        }
+        ExprKind::Param { default, .. } => {
+            if let Some(d) = default {
+                collect_expr(d, out);
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            collect_expr(left, out);
+            collect_expr(right, out);
+        }
+        ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_expr(cond, out);
+            collect_block(then_block, out);
+            collect_block(else_block, out);
+        }
+        ExprKind::For { iter, body, .. } => {
+            collect_expr(iter, out);
+            collect_block(body, out);
+        }
+        ExprKind::Block(b) => collect_block(b, out),
+        ExprKind::String(_)
+        | ExprKind::StringInterp(_)
+        | ExprKind::Int(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Ident(_)
+        | ExprKind::StageFromArg { .. } => {}
+    }
+}
+
+fn rewrite_fn(f: &mut FnDecl, rename: &HashMap<String, String>) {
+    rewrite_block(&mut f.body, rename);
+}
+
+fn rewrite_block(block: &mut Block, rename: &HashMap<String, String>) {
+    for stmt in &mut block.stmts {
+        match stmt {
+            BlockStmt::Let(l) => rewrite_expr(&mut l.value, rename),
+            BlockStmt::Assign { value, .. } => rewrite_expr(value, rename),
+            BlockStmt::Expr(e) => rewrite_expr(e, rename),
+        }
+    }
+    if let Some(tail) = &mut block.tail {
+        rewrite_expr(tail, rename);
+    }
+}
+
+fn rewrite_expr(expr: &mut Expr, rename: &HashMap<String, String>) {
+    match &mut expr.kind {
+        ExprKind::Call { callee, args } => {
+            if let Some(n) = rename.get(callee) {
+                *callee = n.clone();
+            }
+            for a in args {
+                rewrite_expr(a, rename);
+            }
+        }
+        ExprKind::Method { recv, args, .. } => {
+            rewrite_expr(recv, rename);
+            for a in args {
+                rewrite_expr(a, rename);
+            }
+        }
+        ExprKind::List(xs) => {
+            for x in xs {
+                rewrite_expr(x, rename);
+            }
+        }
+        ExprKind::StageFrom { image } => rewrite_expr(image, rename),
+        ExprKind::MountCtor { args, .. } => {
+            for a in args {
+                rewrite_expr(a, rename);
+            }
+        }
+        ExprKind::Param { default, .. } => {
+            if let Some(d) = default {
+                rewrite_expr(d, rename);
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            rewrite_expr(left, rename);
+            rewrite_expr(right, rename);
+        }
+        ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            rewrite_expr(cond, rename);
+            rewrite_block(then_block, rename);
+            rewrite_block(else_block, rename);
+        }
+        ExprKind::For { iter, body, .. } => {
+            rewrite_expr(iter, rename);
+            rewrite_block(body, rename);
+        }
+        ExprKind::Block(b) => rewrite_block(b, rename),
+        ExprKind::String(_)
+        | ExprKind::StringInterp(_)
+        | ExprKind::Int(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Ident(_)
+        | ExprKind::StageFromArg { .. } => {}
+    }
 }
 
 /// Returns (filesystem path, kind, optional git commit, optional stable lock key).
@@ -460,6 +738,94 @@ pub target app = tag(Stage.from("alpine:3.19"), "app");
     }
 
     #[test]
+    fn use_does_not_reexport_transitive_pub_fns() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("base.lam"),
+            r#"
+pub fn cross_base(s: Stage) -> Stage {
+  s.name("base")
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("gnu.lam"),
+            r#"
+use "./base.lam";
+fn local_name(s: Stage) -> Stage { cross_base(s) }
+pub fn gnu_image(s: Stage) -> Stage {
+  local_name(s).name("gnu")
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("musl.lam"),
+            r#"
+use "./base.lam";
+pub fn musl_image(s: Stage) -> Stage {
+  cross_base(s).name("musl")
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("image.lam"),
+            r#"
+use "./gnu.lam";
+use "./musl.lam";
+pub target app = musl_image(gnu_image(Stage.from("alpine:3.19")));
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("Lamina.toml"),
+            r#"
+[package]
+name = "families"
+entry = "image.lam"
+"#,
+        )
+        .unwrap();
+
+        let entry = root.join("image.lam");
+        let src = std::fs::read_to_string(&entry).unwrap();
+        let file = SourceFile::new(FileId(0), entry.display().to_string(), src);
+        let module = parse(&file).unwrap();
+        let ctx = ModuleLoadContext::new(root.to_path_buf());
+        let loaded = load_and_merge(&file, module, &ctx).unwrap();
+        let names: Vec<_> = loaded
+            .module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Fn(f) => Some(f.name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.contains(&"gnu_image"));
+        assert!(names.contains(&"musl_image"));
+        assert!(
+            !names.contains(&"cross_base"),
+            "shared helper must not be re-exported: {names:?}"
+        );
+        assert!(!names.contains(&"local_name"));
+
+        let opts = crate::compile::CompileOptions {
+            params: HashMap::new(),
+            build_args: HashMap::new(),
+            targets: Vec::new(),
+            stdlib_paths: Vec::new(),
+            lint_deny: Vec::new(),
+            run_lints: false,
+            locked: false,
+        };
+        crate::compile::compile_project(root, &opts).unwrap();
+    }
+
+    #[test]
     fn load_git_nested_relative_use() {
         // Remote package with internal ./ dependency must resolve inside the clone.
         let dir = tempdir().unwrap();
@@ -545,8 +911,8 @@ pub target app = entry(Stage.from("alpine:3.19"));
                 .module
                 .items
                 .iter()
-                .any(|i| matches!(i, Item::Fn(f) if f.name == "label_me")),
-            "nested ./helpers.lam should resolve and re-export pub fn"
+                .all(|i| !matches!(i, Item::Fn(f) if f.name == "label_me")),
+            "nested ./helpers.lam must stay internal to the remote module"
         );
         // Nested dep locked under a git+ key, not bare "./helpers.lam"
         assert!(
