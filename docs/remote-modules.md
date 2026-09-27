@@ -53,7 +53,7 @@ A remote module **may** `use "./sibling.lam"` or `use "../other/mod.lam"` as lon
 
 1. Resolve against the file’s directory in the module cache (not your project root).
 2. Are locked as stable `git+…?path=…` keys (not bare `./sibling.lam`), so they don’t collide with your app’s local paths.
-3. Re-export `pub fn` transitively the same way path modules do.
+3. Do **not** re-export those `pub fn`s. They stay callable inside the remote file and are locked under `git+…?path=…`, but an importer only sees `pub fn`s declared in the file it `use`s.
 
 Cross-repo deps from a remote package should use another `git+…` `use` (or publish a single entrypoint that re-exports).
 
